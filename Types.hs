@@ -5,7 +5,7 @@
 --  Copyright: (c) 2012 Peter Schachte.  All rights reserved.
 
 -- |Support for type checking/inference.
-module Types (validateModExportTypes, typeCheckMod, checkFullyTyped) where
+module Types (validateModExportTypes, typeCheckModSCC, checkFullyTyped) where
 
 import           AST
 import           Control.Monad.State
@@ -14,6 +14,7 @@ import           Data.List           as List
 import           Data.Map            as Map
 import           Data.Maybe
 import           Data.Set            as Set
+import           Data.Tuple.Select
 import           Options             (LogSelection (Types))
 import           Resources
 import           Util
@@ -77,29 +78,27 @@ checkDeclIfPublic pname ppos public ty = do
                         "' with undeclared parameter or return type") ppos
 
 
--- |Type check a single module named in the second argument; the
---  first argument is a list of all the modules in this module
--- dependency SCC.
-typeCheckMod :: ModSpec -> Compiler ()
-typeCheckMod thisMod = do
-    logTypes $ "**** Type checking module " ++ showModSpec thisMod
-    reenterModule thisMod
-    procs <- getModuleImplementationField (Map.toList . modProcs)
+-- |Type check a list of modules that depend on each other.
+typeCheckModSCC :: [ModSpec] -> Compiler ()
+typeCheckModSCC mods = do
+    logTypes $ "**** Type checking modules " ++ show mods
+    implns <- mapM getLoadedModuleImpln mods
+    let allprocs = Map.unionsWith (++) $ List.map modProcs implns
     let ordered =
             stronglyConnComp
             [(name, name,
-              nub $ concatMap (localBodyProcs thisMod . procImpln) procDefs)
-             | (name,procDefs) <- procs]
-    logTypes $ "**** Strongly connected components:\n" ++
+               Set.elems $ Set.unions
+               $ List.map (allCalleeNames . procImpln) procDefs)
+             | (name,procDefs) <- Map.assocs allprocs]
+    logTypes $ "**** SCCs in possible call graph:\n" ++
       (intercalate "\n" $
        List.map (\scc -> "    " ++ intercalate ", "
                          (case scc of
                              AcyclicSCC name -> [name]
                              CyclicSCC list -> list)) ordered)
-    errs <- mapM (typecheckProcSCC thisMod) ordered
+    errs <- mapM (typecheckPossCallSCC mods) ordered
     mapM_ (\e -> message Error (show e) Nothing) $ concat $ reverse errs
-    finishModule
-    logTypes $ "**** Exiting module " ++ showModSpec thisMod
+    logTypes $ "**** Exiting modules " ++ show mods
     return ()
 
 
@@ -267,16 +266,20 @@ meetTypes ty1 ty2 =
          else Nothing
 
 
-localBodyProcs :: ModSpec -> ProcImpln -> [Ident]
-localBodyProcs thisMod (ProcDefSrc body) =
-    foldProcCalls (localCalls thisMod) (++) [] body
-localBodyProcs thisMod (ProcDefPrim _ _) =
-    shouldnt "Type checking compiled code"
+allCalleeNames :: ProcImpln -> Set Ident
+allCalleeNames (ProcDefSrc body)
+    = foldProcCalls allCalls Set.union Set.empty body
+allCalleeNames (ProcDefPrim _ _)
+    = shouldnt "Type checking compiled code"
 
-localCalls :: ModSpec -> ModSpec -> Ident -> (Maybe Int) -> [Placed Exp] -> [Ident]
-localCalls thisMod m name _ _
-  | m == [] || m == thisMod = [name]
-localCalls _ _ _ _ _ = []
+allCalls :: ModSpec -> Ident -> (Maybe Int) -> [Placed Exp]
+         -> Set Ident
+allCalls _ name _ _ = Set.singleton name
+
+-- localCalls :: ModSpec -> ModSpec -> Ident -> (Maybe Int) -> [Placed Exp] -> [Ident]
+-- localCalls thisMod m name _ _
+--   | m == [] || m == thisMod = [name]
+-- localCalls _ _ _ _ _ = []
 
 
 exprType :: Typing -> Exp -> OptPos -> Compiler (Maybe TypeSpec)
@@ -332,25 +335,25 @@ enforceType _ _ _ _ _ typing = typing -- no variable to record the type of
 --  SCC depend on procs in the list of mods.  In this case, we will
 --  have to rerun the typecheck after typechecking the other modules
 --  on that list.
-typecheckProcSCC :: ModSpec -> SCC ProcName -> Compiler ([TypeReason])
-typecheckProcSCC m (AcyclicSCC name) = do
+typecheckPossCallSCC :: [ModSpec] -> SCC ProcName -> Compiler ([TypeReason])
+typecheckPossCallSCC mods (AcyclicSCC name) = do
     -- A single pass is always enough for non-cyclic SCCs
     logTypes $ "Type checking non-recursive proc " ++ name
-    (_,reasons) <- typecheckProcDecls m name
+    (_,reasons) <- typecheckProcDecls mods name
     return (reasons)
-typecheckProcSCC m (CyclicSCC list) = do
+typecheckPossCallSCC mods (CyclicSCC names) = do
     logTypes $ "**** Type checking recursive procs " ++
-      intercalate ", " list
+      intercalate ", " names
     (sccAgain,reasons) <-
         foldM (\(sccAgain,rs) name -> do
-                    (sccAgain',reasons) <- typecheckProcDecls m name
+                    (sccAgain',reasons) <- typecheckProcDecls mods name
                     return (sccAgain || sccAgain', reasons++rs))
-        (False, []) list
+        (False, []) names
     if sccAgain
-    then typecheckProcSCC m $ CyclicSCC list
+    then typecheckPossCallSCC mods $ CyclicSCC names
     else do
       logTypes $ "**** Completed checking of " ++
-             intercalate ", " list ++
+             intercalate ", " names ++
              " with " ++ show (length reasons) ++ " errors"
       return (reasons)
 
@@ -360,26 +363,30 @@ typecheckProcSCC m (CyclicSCC list) = do
 --  Bools, the first saying whether any defnition has been udpated,
 --  and the second saying whether any public defnition has been
 --  updated.
-typecheckProcDecls :: ModSpec -> ProcName ->
+typecheckProcDecls :: [ModSpec] -> ProcName ->
                      Compiler (Bool,[TypeReason])
-typecheckProcDecls m name = do
-    logTypes $ "** Type checking " ++ name
-    defs <- getModuleImplementationField
-            (Map.findWithDefault (error "missing proc definition")
-             name . modProcs)
-    (revdefs,sccAgain,reasons) <-
-        foldM (\(ds,sccAgain,rs) def -> do
-                    (d,again,rs') <- typecheckProcDecl m def
-                    return (d:ds,sccAgain || again,rs'++rs))
-        ([],False,[]) defs
-    updateModImplementation
-      (\imp -> imp { modProcs = Map.insert name (reverse revdefs)
-                                $ modProcs imp })
-    logTypes $ "** New definition of " ++ name ++ ":"
-    logTypes $ intercalate "\n" $ List.map (showProcDef 4) (reverse revdefs)
+typecheckProcDecls mods name = do
+    logTypes $ "** Type checking " ++ name ++ " in mods " ++ show mods
+    implns <- mapM getLoadedModuleImpln mods
+    let alldefs = zip mods
+            $ List.map (Map.findWithDefault [] name . modProcs) implns
+    (sccAgain,reasons) <-
+        foldM (\(sccAgain,rs) (mod,defs) -> do
+                    results <- mapM (typecheckProcDecl mod) defs
+                    let defs' = List.map sel1 results
+                    logTypes $ "** New definition of " ++ name ++ ":"
+                    logTypes $ intercalate "\n" $ List.map (showProcDef 4) defs'
+                    updateLoadedModuleImpln
+                        (\imp -> imp { modProcs = Map.insert name defs'
+                                       $ modProcs imp })
+                        mod
+                    let again = or $ List.map sel2 results
+                    let rs'   = concat $ List.map sel3 results
+                    return (sccAgain || again,rs'++rs))
+        (False,[]) alldefs
     -- XXX this shouldn't be necessary anymore, but keep it for now for safety
-    unless (sccAgain || not (List.null reasons)) $ do
-        mapM_ checkProcDefFullytyped revdefs
+    -- unless (sccAgain || not (List.null reasons)) $ do
+    --     mapM_ checkProcDefFullytyped revdefs
     return (sccAgain,reasons)
 
 

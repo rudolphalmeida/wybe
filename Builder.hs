@@ -72,7 +72,7 @@ import           System.Directory
 import           System.Exit               (exitFailure, exitSuccess)
 import           System.FilePath
 import           System.Time               (ClockTime)
-import           Types                     (typeCheckMod, checkFullyTyped,
+import           Types                     (typeCheckModSCC, checkFullyTyped,
                                             validateModExportTypes)
 import           Unbranch                  (unbranchProc)
 
@@ -323,7 +323,7 @@ buildArchive arch = do
 compileModSCC :: [ModSpec] -> Compiler ()
 compileModSCC mspecs = do
     stopOnError $ "preliminary compilation of module(s) " ++ showModSpecs mspecs
-    logDump Flatten Types "FLATTENING"
+    -- logDump Flatten Types "FLATTENING"
     fixpointProcessSCC handleModImports mspecs
     logBuild $ replicate 70 '='
     logBuild $ "resource and type checking modules "
@@ -337,7 +337,7 @@ compileModSCC mspecs = do
     stopOnError $ "processing resources for modules " ++
       showModSpecs mspecs
     -- No fixed point needed because public procs must have types declared
-    mapM_ typeCheckMod mspecs
+    typeCheckModSCC mspecs
     stopOnError $ "type checking of modules " ++
       showModSpecs mspecs
     logDump Types Unbranch "TYPE CHECK"

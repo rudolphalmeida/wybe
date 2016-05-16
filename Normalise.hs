@@ -87,16 +87,19 @@ normaliseItem modCompiler (FuncDecl vis detism inline
     vis detism inline
     (ProcProto name (params ++ [Param "$" resulttype ParamOut flowType]) 
      resources)
-    [maybePlace (ForeignCall "llvm" "move" []
-                 [maybePlace (Typed (content result) resulttype False)
-                  $ place result,
-                  Unplaced
-                  $ Typed (Var "$" ParamOut flowType) resulttype False])
+    [maybePlace
+     (case resulttype of
+           Unspecified -> 
+             ForeignCall "llvm" "move" []
+             [result, Unplaced $ Var "$" ParamOut flowType]
+           _ ->
+             ForeignCall "llvm" "move" []
+             [maybePlace (Typed (content result) resulttype False)
+              $ place result,
+              Unplaced $ Typed (Var "$" ParamOut flowType) resulttype False])
      pos]
     pos)
-normaliseItem _ item@(ProcDecl _ _ _ _ _ _) = do
-    (item',tmpCtr) <- flattenProcDecl item
-    addProc tmpCtr item'
+normaliseItem _ item@(ProcDecl _ _ _ _ _ _) = addProc 0 item
 normaliseItem _ (StmtDecl stmt pos) = do
     updateModule (\s -> s { stmtDecls = maybePlace stmt pos : stmtDecls s})
 

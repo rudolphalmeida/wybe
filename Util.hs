@@ -6,7 +6,7 @@
 --  Copyright: (c) 2014 Peter Schachte.  All rights reserved.
 --
 
-module Util (checkMaybe, setMapInsert, fillLines) where
+module Util (checkMaybe, setMapInsert, fillLines, applyPair) where
 
 
 import Data.Map as Map
@@ -50,3 +50,5 @@ fillLines' marginText currColumn lineLength (word1:word2:words) =
              fillLines' marginText (length marginText) lineLength (word2:words)
         else " " ++ fillLines' marginText nextColumn lineLength (word2:words)
 
+applyPair :: ((a->b),(a->c)) -> a -> (b,c)
+applyPair (f1,f2) x = (f1 x, f2 x)
