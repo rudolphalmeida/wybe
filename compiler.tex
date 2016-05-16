@@ -99,13 +99,6 @@ and second based on argument modes (which arguments are inputs, which are
 outputs, and which are both).
 Since \lang supports optional arguments, there is no overloading based
 on arity.
-It is required that all procedures with the same name in single module
-also have the same argument types in the same order.
-They may, however, have different modes.
-Thus the module of a procedure call determines the argument types, allowing
-us to split call resolution into two separate phases:
-first the module of each call is determined, and then the mode-overloaded
-procedure within the module is determined.
 
 Wybe semantics insists that the argument types of a procedure do not depend
 on its callers, only on its definition.
@@ -115,36 +108,35 @@ the classical Algorithm W approach to type inference.
 Type analysis is made more complex because
 the argument types of the procedures called by a procedure
 depend on which procedure those calls resolve to, while the resolution
-of calls depends on the argument types
-Thus module resolution must be performed concurrently with type analysis.
-Resolution of modes is performed during flattening
-(Section~\ref{sec:flattening}).
+of calls depends on the argument types.
+Thus type analysis is responsible for overloading resolution.
 
-Type analysis is performed on a single SCC in the module dependency graph.
-It is a fixed point process operating on a potential call graph.
-Each node in the graph represents all procedures with the same name defined
-in any of the modules being analyzed, and each edge represents a call.
-Analysis precedes bottom up through this graph by strongly connected component
+Type analysis is separately performed on each SCC in the module
+dependency graph.
+This is a fixed point process operating on a graph of \emph{potential} calls,
+since at this point individual calls have not been resolved.
+Each node in this graph represents all procedures with the same name defined
+in any of the modules currently being analyzed, and each edge represents
+a call from any of those procedures.
+Analysis proceeds bottom up through this graph by strongly connected component
+in the potential call graph
 building a mapping from procedure definition to its argument types.
 Initially the typing for each procedure in a potential call graph SCC
 is approximated to be its declared type,
 if it has one, or the special bottom type if not.
-For each procedure definition in each node in the SCC,
-we analyse the variable types in the body of the definition,
-and replace the approximation of the argument types for that definition
-with the lattice join of previous and newly computed parameter types.
-The analysis of a single procedure body proceeds through the code collecting
-a list of possible typings considering the known types of arguments for each
-visible definition of each called procedure name from previously compiled
-modules, plus the current approximation of the types for definitions in the
-current module SCC.
+Each analysis iteration works by computing a set of possible parameter
+typings for each procedure in the possible call graph SCC
+based on all the possible typings of variables entailed by
+the unique typings of all the procedures each call could refer to.
+If in any iteration an individual procedure should have more than
+one typing, the analysis of that SCC can stop and report a type ambiguity.
+If after a fixed point is reached any procedure has no typing,
+then a type error is reported.
 
-This process is repeated until a fixed point is reached, and then
-any type errors are reported.
-If no type errors are uncovered, then a unique module is determined for
+If no error is found for a possible call graph SCC,
+the final step is then to traverse all the procedure
+bodies in the SCC, noting the unique procedure invoked by
 each call.
-The final step is then to traverse all the procedure
-bodies in the SCC, adding the determined module to each call.
 
 
 \subsection{Flattening}
@@ -153,9 +145,7 @@ bodies in the SCC, adding the determined module to each call.
 Flattening significantly simplifies the code,
 replacing all function calls with procedure calls,
 eliminating all \texttt{let}, \texttt{where} and conditional
-expressions, and rewriting function definitions as procedure definitions.
-It also finally resolves mode-based overloading, determining for
-each call which definition is intended, and splits in-out arguments
+expressions, and splitting in-out arguments
 into separate inputs and outputs.
 
 
