@@ -387,27 +387,29 @@ updateImplementations updater = do
 
 -- |Return some function of the module currently being compiled.
 getModule :: (Module -> t) -> Compiler t
-getModule getter = gets (getter . List.head . underCompilation)
+getModule getter = do
+    mods <- gets underCompilation
+    case mods of
+      [] -> shouldnt "getModule with no current module"
+      (mod:_) -> return $ getter mod
 
 
 -- |Transform the module currently being compiled.
 updateModule :: (Module -> Module) -> Compiler ()
 updateModule updater = do
-    modify (\comp -> let mods = underCompilation comp
-                     in  if List.null mods
-                         then shouldnt "updateModule with no current module"
-                         else comp { underCompilation =
-                                          updater (List.head mods):List.tail mods })
+    modify (\comp -> case underCompilation comp of
+                 [] -> shouldnt "updateModule with no current module"
+                 (h:t) -> comp { underCompilation = updater h:t })
 
 -- |Transform the module currently being compiled.
 updateModuleM :: (Module -> Compiler Module) -> Compiler ()
 updateModuleM updater = do
-    updateCompilerM (\comp -> do
-                          let mods = underCompilation comp
-                          when (List.null mods) $
-                            shouldnt "updateModuleM with no current module"
-                          mod' <- updater $ List.head mods
-                          return comp { underCompilation = mod':List.tail mods })
+    updateCompilerM (\comp ->
+                        case underCompilation comp of
+                          [] -> shouldnt "updateModuleM with no current module"
+                          (mod:rest) -> do
+                            mod' <- updater mod
+                            return comp { underCompilation = mod':rest })
 
 
 -- |Return some function of the specified module.  Error if it's not a module.
@@ -763,12 +765,9 @@ updateProcDef updater pspec@(ProcSpec modspec procName procID) =
     (\imp -> imp { modProcs =
                        Map.adjust
                        (\l -> let (front,back) = List.splitAt procID l
-                                  updated = 
-                                      if List.null back
-                                      then shouldnt $ "invalid proc spec " ++
-                                           show pspec
-                                      else updater $ List.head back
-                              in  front ++ updated:List.tail back)
+                              in case back of
+                             [] -> shouldnt $ "invalid proc spec " ++ show pspec
+                             (spec:specs) -> front ++ (updater spec):specs)
                        procName (modProcs imp) })
     modspec
     
@@ -782,11 +781,9 @@ updateProcDefM updater pspec@(ProcSpec modspec procName procID) =
          Nothing -> return imp
          Just defs -> do
            let (front,back) = List.splitAt procID defs
-           updated <- 
-               if List.null back
-               then shouldnt $ "invalid proc spec " ++
-                    show pspec
-               else updater $ List.head back
+           updated <- case back of
+             [] -> shouldnt $ "invalid proc spec " ++ show pspec
+             (pspec:_) -> updater pspec
            let defs' = front ++ updated:List.tail back
            let procs' = Map.insert procName defs' procs
            return $ imp { modProcs = procs' })
