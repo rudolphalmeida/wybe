@@ -403,6 +403,7 @@ typecheckProcDecl m pd = do
     if vis == Public && any ((==Unspecified). paramType) params
       then return (pd,False,[ReasonUndeclared name pos])
       else do
+        reenterModule m
         typing <- foldM (addDeclaredType name pos (length params))
                   initTyping $ zip params [1..]
         typing' <- foldM (addResourceType name pos)
@@ -424,8 +425,10 @@ typecheckProcDecl m pd = do
                  (logTypes $ "** check again " ++ name ++
                       "\n-----------------OLD:" ++ showProcDef 4 pd ++
                       "\n-----------------NEW:" ++ showProcDef 4 pd' ++ "\n")
+            finishModule
             return (pd'',sccAgain,typingErrs typing'')
-          else
+          else do
+            finishModule
             shouldnt $ "Inconsistent param typing for proc " ++ name
 
 
@@ -485,9 +488,9 @@ typecheckProcDef m name pos paramTypes body = do
         if validTyping typing
             then do
                 logTypes $ "apply body typing" ++ showBody 4 body
-                body' <- applyBodyTyping typing body
+                result <- applyBodyTyping typing body
                 logTypes $ "After body typing:" ++ showBody 4 body'
-                return (typing',body')
+                return result
             else do
                 logTypes $ "invalid: no body typing" ++ showBody 4 body
                 return (typing', body)
@@ -571,29 +574,34 @@ typecheckStmt m caller call@(ProcCall cm name id args) pos typing = do
            then return [typeError (ReasonUninit caller name pos) typing]
            else return [typeError (ReasonUndef caller name pos) typing]
       else do
-        typList <- mapM (matchingArgFlows caller name args pos typing) procs
-        let typList' = concat typList
-        let typList'' = List.filter validTyping typList'
+        paramLists <- mapM ((fmap $ List.map paramType) . getParams) procs
+        let paramLists' = Set.toList $ Set.fromList
+                          $ List.filter ((==length args) . length) paramLists
+        -- paramLists' is list of all *distinct* lists of param types
+        -- of procs matching the call (with same arity)
+        typList <- typeCheckArgs pos name args paramLists typing
+        let typList' = List.filter validTyping typList
         let dups = snd $ List.foldr
                    (\elt (s,l) ->
                         if Set.member elt s
                         then (s,if List.elem elt l then l else elt:l)
                         else (Set.insert elt s,l))
-                   (Set.empty,[]) typList''
-        logTypes $ "Resulting valid types: " ++ show typList''
+                   (Set.empty,[]) typList'
+        logTypes $ "Resulting valid types: " ++ show typList'
         if List.null dups
-        then if List.null typList''
+        then if List.null typList'
              then do
                 logTypes $ "Type error detected:\n" ++
-                    unlines (List.map show typList')
-                return typList'
-             else return typList''
-        else return [typeError (ReasonOverload
-                                   (List.map fst $
-                                    List.filter
-                                      (List.any (flip List.elem dups) . snd) $
-                                    zip procs typList)
-                                   pos) typing]
+                    unlines (List.map show typList)
+                return typList
+             else return typList'
+        else shouldnt "Overloading error; need to handle this"
+        -- else return [typeError (ReasonOverload
+        --                            (List.map fst $
+        --                             List.filter
+        --                               (List.any (flip List.elem dups) . snd)
+        --                             $ zip procs typList)
+        --                            pos) typing]
 typecheckStmt _ _ call@(ForeignCall "llvm" "move" [] [a1,a2]) pos typing = do
   -- Ensure arguments have the same types
     logTypes $ "Type checking move instruction " ++ showStmt 4 call
@@ -608,17 +616,18 @@ typecheckStmt _ _ call@(ForeignCall _ _ _ args) pos typing = do
     return [typing']
 typecheckStmt m caller (Test stmts exp) pos typing = do
     typings <- typecheckBody m caller typing stmts
-    mapM (\t -> do
-               typecheckArg' (content exp) (place exp) Unspecified
-                   (TypeSpec ["wybe"] "bool" []) t (ReasonCond pos))
+    fmap concat $
+        mapM (\t -> typecheckArg' (content exp) (place exp) Unspecified
+                    (TypeSpec ["wybe"] "bool" []) t (ReasonCond pos))
         typings
 typecheckStmt _ _ Nop pos typing = return [typing]
 typecheckStmt m caller (Cond test exp thn els) pos typing = do
     typings <- typecheckSequence (typecheckPlacedStmt m caller) [typing] test
-    typings' <- mapM (\t -> do
-                           typecheckArg' (content exp) (place exp) Unspecified
-                             (TypeSpec ["wybe"] "bool" []) t (ReasonCond pos))
-                typings
+    typings' <-
+        fmap concat $
+        mapM (\t -> typecheckArg' (content exp) (place exp) Unspecified
+                    (TypeSpec ["wybe"] "bool" []) t (ReasonCond pos))
+        typings
     typings'' <- typecheckSequence (typecheckPlacedStmt m caller) typings' thn
     typecheckSequence (typecheckPlacedStmt m caller) typings'' els
 typecheckStmt m caller (Loop body) pos typing = do
@@ -630,24 +639,77 @@ typecheckStmt _ _ Break pos typing = return [typing]
 typecheckStmt _ _ Next pos typing = return [typing]
 
 
-matchingArgFlows :: ProcName -> ProcName -> [Placed Exp] -> OptPos -> Typing -> ProcSpec -> Compiler [Typing]
-matchingArgFlows caller called args pos typing pspec = do
-    params <- fmap (List.filter nonResourceParam) $ getParams pspec
-    logTypes $ "checking flow of call to " ++ show pspec
-        ++ " args " ++ show args
-        ++ " against params " ++ show params ++ "..."
-    case reconcileArgFlows params args of
-      Just args' -> do
-        logTypes $ "MATCHES; checking types: args = " ++ show args'
-        typing <- foldM (typecheckArg pos params $ procSpecName pspec)
-            typing $ zip3 [1..] params args'
-        logTypes $ "Type check result = " ++ show typing
-        return [typing]
-      Nothing -> do
-        logTypes "fails"
-        return [typeError (ReasonArity caller called pos (length args)
-                           (length  params))
-                typing]
+
+typeMatchingProcs :: ModSpec -> ProcName -> Maybe ProcID -> [Placed Exp]
+                     -> Compiler 
+typeMatchingProcs cm name id args = do
+    procs <- case id of
+        Nothing   -> callTargets cm name
+        Just pid -> return [ProcSpec cm name pid] -- XXX check modspec
+                                                  -- is valid; or just
+                                                  -- ignore pid?
+    logTypes $ "   potential procs: " ++
+           List.intercalate ", " (List.map show procs)
+    paramTypeLists <- mapM ((fmap $ List.map paramType) . getParams) procs
+    let paramTypeMap = List.foldr (*&*&^*)
+            $ List.filter ((==length args) . length . fst)
+            $ zip paramTypeLists procs
+    let paramLists' = Set.toList $ Set.fromList
+
+
+
+
+typeCheckArgs :: OptPos -> ProcName -> [Placed Exp] -> [[TypeSpec]]
+              -> Typing -> Compiler [Typing]
+typeCheckArgs pos name args paramLists typing =
+    fmap concat $ mapM (typeCheckArgs' pos name args [typing]) paramLists
+
+
+typeCheckArgs' :: OptPos -> ProcName -> [Placed Exp] -> [Typing]
+               -> [TypeSpec] -> Compiler [Typing]
+typeCheckArgs' pos name args typings params = do
+    let triples = zip3 [1::Int ..] params args
+    typecheckSequence (typecheckArg pos name) typings triples
+
+
+-- data FlowCompat = Incompatible | Compatible | Identical
+--                   deriving (Eq, Ord)
+-- 
+-- compatible :: FlowCompat -> Bool
+
+
+
+
+
+
+
+
+
+
+
+-- compatible compat = compat /= Incompatible
+
+
+-- matchProcCall :: ProcName -> ProcName -> [Placed Exp] -> OptPos -> Typing -> ProcSpec -> Compiler [Typing]
+-- matchProcCall caller called args pos typing pspec = do
+--     params <- fmap (List.filter nonResourceParam) $ getParams pspec
+--     logTypes $ "checking flow and type of call to " ++ show pspec
+--         ++ " args " ++ show args
+--         ++ " against params " ++ show params ++ "..."
+--     
+-- 
+--     if compatibile $ argFlowCompat params args
+--         then do
+--       logTypes $ "MATCHES; checking types: args = " ++ show args
+--       typing <- foldM (typecheckArg pos params $ procSpecName pspec)
+--           typing $ zip3 [1..] params args
+--       logTypes $ "Type check result = " ++ show typing
+--       return [typing]
+--         else do
+--       logTypes "fails"
+--       return [typeError (ReasonArity caller called pos (length args)
+--                          (length  params))
+--               typing]
 
 noteOutputCast :: Exp -> Typing -> Typing
 noteOutputCast (Typed (Var name flow _) typ True) typing
@@ -655,26 +717,52 @@ noteOutputCast (Typed (Var name flow _) typ True) typing
 noteOutputCast _ typing = typing
 
 
--- |Match up params to args based only on flow, returning Nothing if
---  they don't match, and Just a possibly updated arglist if they
---  do.  The purpose is to handle passing an in-out argument pair
---  where only an output is expected.  This is permitted, and the
---  input half is just ignored.  This is performed after the code has
---  been flattened, so ParamInOut have already been turned into
---  adjacent pairs of ParamIn and ParamOut parameters.
-reconcileArgFlows :: [Param] -> [Placed Exp] -> Maybe [Placed Exp]
-reconcileArgFlows [] [] = Just []
-reconcileArgFlows _ [] = Nothing
-reconcileArgFlows [] _ = Nothing
-reconcileArgFlows (Param _ _ ParamOut _:params)
-  (arg1:arg2:args)
-    | isHalfUpdate ParamIn (content arg1) &&
-      isHalfUpdate ParamOut (content arg2)
-    = fmap (arg2:) $ reconcileArgFlows params args
-reconcileArgFlows (Param _ _ pflow _:params) (arg:args)
-    = if pflow == expFlow (content arg)
-      then fmap (arg:) $ reconcileArgFlows params args
-      else Nothing
+-- -- |Match up params to args based only on flow, returning Nothing if
+-- --  they don't match, and Just a possibly updated arglist if they
+-- --  do.  The purpose is to handle passing an in-out argument pair
+-- --  where only an output is expected.  This is permitted, and the
+-- --  input half is just ignored.  This is performed after the code has
+-- --  been flattened, so ParamInOut have already been turned into
+-- --  adjacent pairs of ParamIn and ParamOut parameters.
+-- reconcileArgFlows :: [Param] -> [Placed Exp] -> Maybe [Placed Exp]
+-- reconcileArgFlows [] [] = Just []
+-- reconcileArgFlows _ [] = Nothing
+-- reconcileArgFlows [] _ = Nothing
+-- reconcileArgFlows (Param _ _ ParamOut _:params)
+--   (arg1:arg2:args)
+--     | isHalfUpdate ParamIn (content arg1) &&
+--       isHalfUpdate ParamOut (content arg2)
+--     = fmap (arg2:) $ reconcileArgFlows params args
+-- reconcileArgFlows (Param _ _ pflow _:params) (arg:args)
+--     = if pflow == expFlow (content arg)
+--       then fmap (arg:) $ reconcileArgFlows params args
+--       else Nothing
+
+
+-- -- |Match up params to args based only on flow, returning Nothing if
+-- --  they don't match, and Just a possibly updated arglist if they
+-- --  do.  The purpose is to handle passing an in-out argument pair
+-- --  where only an output is expected.  This is permitted, and the
+-- --  input half is just ignored.  This is performed after the code has
+-- --  been flattened, so ParamInOut have already been turned into
+-- --  adjacent pairs of ParamIn and ParamOut parameters.
+-- argFlowCompat :: [Param] -> [Placed Exp] -> FlowCompat
+-- argFlowCompat [] [] = Compatible
+-- argFlowCompat _ [] = Incompatible
+-- argFlowCompat [] _ = Incompatible
+-- argFlowCompat (Param _ _ pflow _:params) (arg:args)
+--     min (singleFlowCompat pflow $ expFlow )
+-- 
+--     | isHalfUpdate ParamIn (content arg1) &&
+--       isHalfUpdate ParamOut (content arg2)
+--     = fmap (arg2:) $ argFlowCompat params args
+-- argFlowCompat (Param _ _ pflow _:params) (arg:args)
+--     = if pflow == expFlow (content arg)
+--       then fmap (arg:) $ argFlowCompat params args
+--       else Nothing
+
+
+
 
 
 -- |Does this parameter *not* correspond to a resource?
@@ -683,21 +771,21 @@ nonResourceParam (Param _ _ _ (Resource _)) = False
 nonResourceParam _ = True
 
 
-typecheckArg :: OptPos -> [Param] -> ProcName ->
-                Typing -> (Int,Param,Placed Exp) -> Compiler Typing
-typecheckArg pos params pname typing (argNum,param,arg) = do
+typecheckArg :: OptPos -> ProcName ->
+                Typing -> (Int,TypeSpec,Placed Exp) -> Compiler [Typing]
+typecheckArg pos pname typing (argNum,ty,arg) = do
     let reasonType = ReasonArgType pname argNum pos
     if not $ validTyping typing
-      then return typing
+      then return [typing]
       else do
-      logTypes $ "type checking " ++ show arg ++ " against " ++ show param
-      typecheckArg' (content arg) (place arg) Unspecified
-        (paramType param) typing reasonType
+          logTypes $ "type checking " ++ show arg ++ " against " ++ show ty
+          typecheckArg' (content arg) (place arg) Unspecified
+              ty typing reasonType
 
 
 typecheckArg' :: Exp -> OptPos -> TypeSpec -> TypeSpec -> Typing ->
-                 TypeReason -> Compiler Typing
-typecheckArg' texp@(Typed exp typ cast) pos _ paramType typing reason = do
+                 TypeReason -> Compiler [Typing]
+typecheckarg' texp@(Typed exp typ cast) pos _ paramType typing reason = do
     logTypes $ "Checking typed expr " ++ show texp
     typ' <- fmap (fromMaybe Unspecified) $ lookupType typ pos
     logTypes $ "Determined type " ++ show typ'
@@ -713,10 +801,10 @@ typecheckArg' (Var var _ _) _ declType paramType typing reason = do
         show paramType ++
         (if paramType `subtypeOf` declType then " succeeded" else " FAILED")
     if paramType `subtypeOf` declType
-      then return $ addOneType reason var paramType typing
+      then return [addOneType reason var paramType typing]
       else if paramType == Unspecified -- may be type checking recursion
-           then return typing
-           else return $ typeError reason typing
+           then return [typing]
+           else return [typeError reason typing]
 typecheckArg' (IntValue val) _ declType paramType typing reason = do
     return $ typecheckArg'' declType paramType (TypeSpec ["wybe"] "int" [])
       typing reason
@@ -734,15 +822,15 @@ typecheckArg' exp _ _ _ _ _ = do
 
 
 typecheckArg'' :: TypeSpec -> TypeSpec -> TypeSpec -> Typing -> TypeReason ->
-                  Typing
+                  [Typing]
 typecheckArg'' callType paramType constType typing reason =
     let realType =
             if constType `subtypeOf` callType then constType else callType
     in -- trace ("check call type " ++ show callType ++ " against param type " ++ show paramType ++ " for const type " ++ show constType) $
        if paramType `subtypeOf` realType
-       then typing
+       then [typing]
        else -- trace ("type error with constant: " ++ show realType ++ " vs. " ++ show paramType)
-            typeError reason typing
+            [typeError reason typing]
 
 
 firstJust :: [Maybe a] -> Maybe a
@@ -757,12 +845,18 @@ listArity toFType toDirection lst =
           | e <- lst]
 
 
-applyBodyTyping :: Typing -> [Placed Stmt] -> Compiler [Placed Stmt]
-applyBodyTyping typing body = do
-    mapM (placedApplyM (applyStmtTyping typing)) $ body
+applyBodyTyping :: Typing -> [Placed Stmt] -> Compiler (Typing,[Placed Stmt])
+applyBodyTyping typing [] = return (typing,[])
+applyBodyTyping typing (stmt:stmts) = do
+    (typing',stmt') <- placedApplyM (applyStmtTyping typing) stmt
+    (typing'',stmts'') <- applyBodyTyping typing' stmts
+    return (typing'',stmt':stmts'')
 
 
-applyStmtTyping :: Typing -> Stmt -> OptPos -> Compiler (Placed Stmt)
+-- |Apply the typing to the statement, selecting the right proc.  Returns
+--  a typing, which will include an error if no single proc can be
+--  uniquely determined.
+applyStmtTyping :: Typing -> Stmt -> OptPos -> Compiler (Typing,Placed Stmt)
 applyStmtTyping typing call@(ProcCall cm name id args) pos = do
     logTypes $ "typing call " ++ showStmt 4 call
     let args' = List.map (fmap $ applyExpTyping typing) args
@@ -771,7 +865,8 @@ applyStmtTyping typing call@(ProcCall cm name id args) pos = do
         Just n -> return [ProcSpec cm name n]
     logTypes $ "   " ++ show (length procs) ++ " potential procs: "
            ++ intercalate ", " (List.map show procs)
-    matches <- fmap catMaybes $ mapM (matchProcType args') procs
+    matches <- fmap catMaybes $ mapM (matchProcMode args') procs
+    -- XXX should select best mode when there are multiple matches
     checkError ((show $ length matches) ++
                 " matching procs (should be 1) for stmt "
                 ++ showStmt 0 call)
@@ -830,14 +925,15 @@ applyExpTyping _ exp =
     shouldnt $ "Expression '" ++ show exp ++ "' left after flattening"
 
 
-matchProcType :: [Placed Exp] -> ProcSpec
+matchProcMode :: [Placed Exp] -> ProcSpec
               -> Compiler (Maybe ([Placed Exp], ProcSpec))
-matchProcType args p = do
+matchProcMode args p = do
     params <- fmap (List.filter nonResourceParam) $ getParams p
     logTypes $ "   checking call to " ++
         show p ++ " args " ++
         show args ++ " against params " ++
         show params
+    undefined
     return $
         fmap (\as -> (as,p)) $
         checkMaybe (\as -> all (uncurry subtypeOf)
@@ -845,7 +941,7 @@ matchProcType args p = do
                                  (expType . content) as)
                             (List.map
                              paramType params))) $
-        reconcileArgFlows params args
+        args
 
 
 ----------------------------------------------------------------
