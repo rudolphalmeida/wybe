@@ -489,7 +489,7 @@ typecheckProcDef m name pos paramTypes body = do
             then do
                 logTypes $ "apply body typing" ++ showBody 4 body
                 result <- applyBodyTyping typing body
-                logTypes $ "After body typing:" ++ showBody 4 body'
+                logTypes $ "After body typing:" ++ showBody 4 result
                 return result
             else do
                 logTypes $ "invalid: no body typing" ++ showBody 4 body
@@ -510,34 +510,45 @@ typecheckProcDef m name pos paramTypes body = do
 --  a list of values, and for each element of the folded list, the
 --  function is applied to every result from the previous element,
 --  finally producing the list of all the results.
-typecheckSequence :: (Typing -> t -> Compiler [Typing]) -> [Typing] -> [t] ->
-                    Compiler [Typing]
-typecheckSequence f typings [] = return typings
-typecheckSequence f typings (t:ts) = do
+typecheckSequence :: (Typing -> t -> Compiler [Typing,[t]])
+                  -> [Typing] -> [t] -> Compiler [Typing,[t]]
+typecheckSequence f typings ts = do
     logTypes $ "Type checking " ++ show (1 + length ts) ++ " things with " ++
       show (length typings) ++ " typings, " ++
       show (length $ List.filter validTyping typings) ++ " of them valid"
-    typings' <- mapM (flip f t) typings
-    let typings'' = pruneTypings $ concat typings'
-    if List.null typings'
-      then return []
-      else if List.null typings'' || not (validTyping $ List.head typings'')
-              -- No point going further if it's already invalid
-           then return [List.head $ concat typings']
-           else typecheckSequence f typings'' ts
+    typings' <- fmap concat $ mapM (flip (typecheckSequence1 f) ts) typings
+    let typings'' = List.filter (validTyping . fst) typings'
+    -- Filter out invalid typings if there are any valid ones
+    if List.null typings''
+      then return typings'
+      else typings''
 
 
-pruneTypings :: [Typing] -> [Typing]
-pruneTypings [] = []
-pruneTypings typings =
-    let pruned = nub $ List.filter validTyping typings
-    in  if List.null pruned
-        then typings
-        else pruned
+typecheckSequence1 :: (Typing -> t -> Compiler [Typing,t])
+                     -> Typing -> [t] -> Compiler [Typing,[t]]
+typecheckSequence1 f typing [] = return (typing,[])
+typecheckSequence1 f typing (t:ts) = do
+    if validTyping typing
+       then do
+           pairs <- f typing t
+           fmap concat
+           $ mapM (\(ty,t') -> List.map (\(ty',ts') -> (ty',(t':ts')))
+                               $ typecheckSequence1 f ty ts) pairs
+        else -- No point going further if it's already invalid
+           return (typing,(t:ts))
+
+
+-- pruneTypings :: [Typing] -> [Typing]
+-- pruneTypings [] = []
+-- pruneTypings typings =
+--     let pruned = nub $ List.filter validTyping typings
+--     in  if List.null pruned
+--         then typings
+--         else pruned
 
 
 typecheckBody :: ModSpec -> ProcName -> Typing -> [Placed Stmt] ->
-                 Compiler [Typing]
+                 Compiler [(Typing,[Placed Stmt])]
 typecheckBody m name typing body = do
     logTypes $ "Entering typecheckSequence from typecheckBody"
     typings' <- typecheckSequence (typecheckPlacedStmt m name)
@@ -549,7 +560,7 @@ typecheckBody m name typing body = do
 -- |Type check a single placed primitive operation given a list of
 --  possible starting typings and corresponding clauses up to this prim.
 typecheckPlacedStmt :: ModSpec -> ProcName -> Typing -> Placed Stmt ->
-                       Compiler [Typing]
+                       Compiler [(Typing,Placed Stmt)]
 typecheckPlacedStmt m caller typing pstmt = do
     typecheckStmt m caller (content pstmt) (place pstmt) typing
 
@@ -557,45 +568,40 @@ typecheckPlacedStmt m caller typing pstmt = do
 -- |Type check a single primitive operation, producing a list of
 --  possible typings.
 typecheckStmt :: ModSpec -> ProcName -> Stmt -> OptPos -> Typing ->
-                 Compiler [Typing]
+                 Compiler [(Typing,Placed Stmt)]
 typecheckStmt m caller call@(ProcCall cm name id args) pos typing = do
     logTypes $ "Type checking call " ++ showStmt 4 call ++
       showMaybeSourcePos pos
     logTypes $ "   with types " ++ show typing
-    procs <- case id of
-        Nothing   -> callTargets cm name
-        Just pid -> return [ProcSpec cm name pid] -- XXX check modspec
-                                                  -- is valid; or just
-                                                  -- ignore pid?
-    logTypes $ "   potential procs: " ++
-           List.intercalate ", " (List.map show procs)
-    if List.null procs
-      then if 1 == length args
-           then return [typeError (ReasonUninit caller name pos) typing]
-           else return [typeError (ReasonUndef caller name pos) typing]
-      else do
-        paramLists <- mapM ((fmap $ List.map paramType) . getParams) procs
-        let paramLists' = Set.toList $ Set.fromList
-                          $ List.filter ((==length args) . length) paramLists
-        -- paramLists' is list of all *distinct* lists of param types
-        -- of procs matching the call (with same arity)
-        typList <- typeCheckArgs pos name args paramLists typing
-        let typList' = List.filter validTyping typList
-        let dups = snd $ List.foldr
-                   (\elt (s,l) ->
-                        if Set.member elt s
-                        then (s,if List.elem elt l then l else elt:l)
-                        else (Set.insert elt s,l))
-                   (Set.empty,[]) typList'
+    -- a list of pairs of type list and list of proc specs
+    paramTypesList <- Map.toList $ procParamTypes cm name id $ length args
+    -- a list of pairs of type list and typing
+    argTypesList   <- Map.toList $ argListTypes typing args
+    -- a list of pairs of lists of proc specs and typings
+    let typList    = [reconcileTypeLists ptypes atypes
+                     | ptypes <- paramTypesList
+                     , atypes <- argTypesList]
+    let typList' = List.filter (validTyping . snd) typList
+    case (paramTypesList,argTypesList,typList') of
+      -- failed because it's a call to an undefined proc
+      ([],_,_) -> do
+        logTypes $ "call to undefined proc: " ++ showStmt 4 call
+        return $ typeError (ReasonUndef caller call pos) typing
+      -- subexpr had a type error
+      (_,[],_) -> do
+        logTypes $ "type error in subexpr: " ++ showStmt 4 call
+        return $ List.map snd argTypesList
+      -- every possible typing has a type error
+      (_,_,[]) -> do
+        logTypes $ "no valid typing for call: " ++ showStmt 4 call
+        return $ List.map snd typList
+      -- multiple possible typings
+      (_,_,_) -> do
         logTypes $ "Resulting valid types: " ++ show typList'
-        if List.null dups
-        then if List.null typList'
-             then do
-                logTypes $ "Type error detected:\n" ++
-                    unlines (List.map show typList)
-                return typList
-             else return typList'
-        else shouldnt "Overloading error; need to handle this"
+        return $ 
+
+
+
         -- else return [typeError (ReasonOverload
         --                            (List.map fst $
         --                             List.filter
@@ -640,9 +646,9 @@ typecheckStmt _ _ Next pos typing = return [typing]
 
 
 
-typeMatchingProcs :: ModSpec -> ProcName -> Maybe ProcID -> [Placed Exp]
-                     -> Compiler 
-typeMatchingProcs cm name id args = do
+procParamTypes :: ModSpec -> ProcName -> Maybe ProcID -> Int
+                     -> Compiler (Map [TypeSpec] [ProcSpec])
+procParamTypes cm name id arity = do
     procs <- case id of
         Nothing   -> callTargets cm name
         Just pid -> return [ProcSpec cm name pid] -- XXX check modspec
@@ -651,11 +657,11 @@ typeMatchingProcs cm name id args = do
     logTypes $ "   potential procs: " ++
            List.intercalate ", " (List.map show procs)
     paramTypeLists <- mapM ((fmap $ List.map paramType) . getParams) procs
-    let paramTypeMap = List.foldr (*&*&^*)
-            $ List.filter ((==length args) . length . fst)
-            $ zip paramTypeLists procs
-    let paramLists' = Set.toList $ Set.fromList
-
+    -- a list of pairs of arg type lists and lists of proc ids
+    return  $ List.foldr (uncurry $ Map.insertWith (++)) Map.empty
+            $ List.filter ((==arity) . length . fst)
+            $ zip paramTypeLists
+            $ List.map (:[]) procs
 
 
 
