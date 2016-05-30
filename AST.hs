@@ -35,7 +35,7 @@ module AST (
   argFlowDirection, argType, outArgVar, argDescription, flowsIn, flowsOut,
   foldBodyPrims, foldBodyDistrib, foldProcCalls,
   expToStmt, procCallToExp, expFlow, setExpFlow, isHalfUpdate,
-  Prim(..), ProcSpec(..),
+  Prim(..), ProcSpec(..), ProcID,
   PrimVarName(..), PrimArg(..), PrimFlow(..), ArgFlowType(..),
   SuperprocSpec(..), initSuperprocSpec, -- addSuperprocSpec,
   -- *Stateful monad for the compilation process
