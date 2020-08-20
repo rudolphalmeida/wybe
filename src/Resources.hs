@@ -194,6 +194,9 @@ transformStmt tmp (Cond test thn els) pos = do
 transformStmt tmp (Loop body) pos = do
     (body',tmp') <- transformBody tmp body
     return ([maybePlace (Loop body') pos], tmp')
+transformStmt tmp (For generators body) pos = do
+    (body', tmp') <- transformBody tmp body
+    return ([maybePlace (For generators body') pos], tmp')
 transformStmt tmp (UseResources res body) pos = do
     scoped <- mapM (canonicaliseResourceSpec pos) res
     -- XXX what about resources with same name and different modules?

@@ -1,0 +1,95 @@
+pub type intlist { pub [] | [|](head:int, tail:intlist) }
+
+pub def single_generator use !io {
+    ?x = [1, 2, 3]
+
+    for i in x {
+        !println(i)
+    }
+}
+
+pub def multiple_generator use !io {
+    ?x = [1, 2, 3]
+    ?y = [4, 5, 6]
+
+    for i in x, j in y {
+        !println(i)
+        !println(j)
+    }
+}
+
+pub def shortest_generator_termination use !io {
+    ?x = [1, 2, 3, 4]
+    ?y = [4, 5]
+
+    for i in x, j in y {
+        !println(i)
+        !println(j)
+    }
+}
+
+pub def using_break use !io {
+    ?x = [1, 2, 3, 4]
+
+    for i in x {
+        if {
+            i = 3 :: break # TODO: Does not break!
+        }
+        !println(i)
+    }
+}
+
+pub def using_continue use !io {
+    ?x = [1, 2, 3, 4]
+
+    for i in x {
+        if {
+            i = 3 :: continue
+        }
+        !println(i)
+    }
+}
+
+pub def using_while use !io {
+    ?x = [1, 2, 3, 4]
+
+    for i in x {
+        while i < 3
+        !println(i)
+    }
+}
+
+pub def using_until use !io {
+    ?x = [1, 2, 3, 4]
+
+    for i in x {
+        until i = 3
+        !println(i)
+    }
+}
+
+!using_until
+
+pub def using_when use !io {
+    ?x = [1, 2, 3, 4]
+
+    for i in x {
+        when i < 3
+        !println(i)
+    }
+}
+
+pub def using_unless use !io {
+    ?x = [1, 2, 3, 4]
+
+    for i in x {
+        unless i < 3
+        !println(i)
+    }
+}
+
+#    int_sequence(start: int, stride: int, end: int)
+#
+#    def [|](?head: int, ?next: int_sequence, current: int_sequence, ?has_next: bool) {
+#    }
+#}

@@ -328,12 +328,14 @@ typeParser = do
 stmtParser :: Parser (Placed Stmt)
 stmtParser =
           doStmt
-          -- <|> forStmt
+          <|> forStmt
           <|> nopStmt
           <|> whileStmt
           <|> untilStmt
           <|> unlessStmt
           <|> whenStmt
+          <|> breakStmt
+          <|> continueStmt
           <|> ifStmtParser
           <|> useStmt
           <|> simpleStmt
@@ -375,19 +377,26 @@ procCallParser = do
 
 
 
+-- do {}
 doStmt :: Parser (Placed Stmt)
 doStmt = do
     pos <- tokenPosition <$> ident "do"
     body <- betweenB Brace $ many1 stmtParser
     return $ Placed (Loop body) pos
 
+-- Generator parser -- var in expr
+generatorStmt :: Parser Generator
+generatorStmt = do
+    loopVar <- content <$> identButNot keywords <* ident "in"
+    In loopVar <$> expParser
 
--- forStmt :: Parser (Placed Stmt)
--- forStmt = do
---     pos <- tokenPosition <$> ident "for"
---     cond <- expParser <* ident "in"
---     body <- expParser
---     return $ Placed (For cond body) pos
+-- for var1 in gen1, var2 in gen2 {}
+forStmt :: Parser (Placed Stmt)
+forStmt = do
+    pos <- tokenPosition <$> ident "for"
+    generators <- generatorStmt `sepBy` comma
+    body <- betweenB Brace $ many1 stmtParser
+    return $ Placed (For generators body) pos
 
 
 whileStmt :: Parser (Placed Stmt)
@@ -396,6 +405,16 @@ whileStmt = do
     cond <- testStmt
     return $ Placed (Cond cond [Unplaced Nop] [Unplaced Break]) pos
 
+breakStmt :: Parser (Placed Stmt)
+breakStmt = do
+    pos <- tokenPosition  <$> ident "break"
+    return $ Placed Break pos
+
+continueStmt :: Parser (Placed Stmt)
+continueStmt = do
+    pos <- tokenPosition <$> ident "continue"
+    -- continue is called Next in AST.hs
+    return $ Placed Next pos
 
 untilStmt :: Parser (Placed Stmt)
 untilStmt = do
