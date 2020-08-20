@@ -1,0 +1,16 @@
+pub type intlist { pub [] | [|](head:int, tail:intlist) }
+
+pub def length(x:intlist) : int =
+    if x = [ ?h | ?t] then 1 + length(t) else 0
+
+pub type int_array is address {
+    #pub int_array(list: intlist) : int_array {
+    #    foreign lpvm alloc 8*length(list)
+
+        
+    #}
+
+    #pub int_array(size: int, value: int) : int_array {
+    #    foreign lpvm alloc (8*size)
+    #} 
+}
