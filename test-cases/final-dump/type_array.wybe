@@ -1,16 +1,32 @@
-pub type intlist { pub [] | [|](head:int, tail:intlist) }
+pub type int_sequence {
+    pub int_sequence(start: int, stride: int, end: int)
 
-pub def length(x:intlist) : int =
-    if x = [ ?h | ?t] then 1 + length(t) else 0
+    pub def test `[|]`(?value: int, ?rest: int_sequence, current: int_sequence) {
+        int_sequence(?s, ?st, ?en, current)
 
-pub type int_array is address {
-    #pub int_array(list: intlist) : int_array {
-    #    foreign lpvm alloc 8*length(list)
+        if {
+            st < 0 :: (s > en)
+            | otherwise :: (s < en)
+        }
 
-        
-    #}
-
-    #pub int_array(size: int, value: int) : int_array {
-    #    foreign lpvm alloc (8*size)
-    #} 
+        ?value = s
+        ?rest = int_sequence(s + st, st, en)
+    }
 }
+
+pub def xrange(start: int, stride: int, end: int): int_sequence =
+    int_sequence(start, stride, end)
+
+pub type int_array is address {}
+
+pub def array(size: int, value: int, ?buffer: int_array) {
+    # TODO: alloc does not take a runtime size. Never reaches "alloc"
+    # codegen in Blocks.hs. Fails in AliasAnalysis
+    foreign lpvm alloc(size * 8, ?buffer)
+
+    for i in xrange(0, 1, size) {
+        foreign lpvm mutate(buffer, ?buffer, i, 1, 8, 0, value)
+    }
+}
+
+?a = array(10, 0)
