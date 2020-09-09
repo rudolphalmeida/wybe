@@ -643,9 +643,13 @@ updateDeadCellsByAccessArgs (aliasMap, deadCells) primArgs = do
 -- to assigned a cell with empty "requiredParams" first.
 assignDeadCellsByAllocArgs :: DeadCells -> [PrimArg] 
         -> (Maybe ((PrimArg, PrimArg), [PrimVarName]), DeadCells)
+assignDeadCellsByAllocArgs deadCells [ArgVar{}, _] = (Nothing, deadCells)
 assignDeadCellsByAllocArgs deadCells primArgs =
     -- [size:int, ?struct:type]
     let [ArgInt size _, struct] = primArgs in
+    -- let (size, struct) = case primArgs of [ArgInt size _, struct] -> (size, struct)
+    --                                       [ArgVar{argVarName=name, argVarType=TypeSpec{typeName="int"}}, struct] ->
+    -- in
     let size' = fromInteger size in
     case Map.lookup size' deadCells of 
         Just cells -> 

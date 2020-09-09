@@ -17,16 +17,39 @@ pub type int_sequence {
 pub def xrange(start: int, stride: int, end: int): int_sequence =
     int_sequence(start, stride, end)
 
-pub type int_array is address {}
-
-pub def array(size: int, value: int, ?buffer: int_array) {
+#pub def array(size: int, value: int, ?buffer: int_array) {
     # TODO: alloc does not take a runtime size. Never reaches "alloc"
     # codegen in Blocks.hs. Fails in AliasAnalysis
-    foreign lpvm alloc(size * 8, ?buffer)
+    #?buffer = foreign lpvm alloc(size * 8 + 8)
 
-    for i in xrange(0, 1, size) {
-        foreign lpvm mutate(buffer, ?buffer, i, 1, 8, 0, value)
+    #foreign lpvm mutate(buffer, ?buffer, 0, true, 8, 0, size)
+    #?start_address = buffer:!int
+    #?moved_start = start_address + 8
+    #?buffer = moved_start:!int_array
+    #?buffer = (buffer:!int + 8):!int_array
+
+    #for i in xrange(0, 8, size * 8) {
+    #    foreign lpvm mutate(buffer, ?buffer, i, true, 8, 0, value)
+    #}
+#}
+
+type raw_int_array is address {}
+
+def alloc_raw_int_array(size: int, init_value: int, ?buffer: raw_int_array) {
+    ?buffer = foreign lpvm alloc(size * 8)
+    ?byte_size = size * 8
+
+    for i in xrange(0, 8, byte_size) {
+        foreign lpvm mutate(buffer, ?buffer, i, 1, byte_size, 0, init_value)
     }
 }
 
-?a = array(10, 0)
+pub type int_array {
+    pub int_array(buffer: raw_int_array, size: int)
+}
+
+pub def array(size: int, value: int, ?res_array: int_array) {
+    ?raw_array = alloc_raw_int_array(size, value)
+
+    ?res_array = int_array(raw_array, size)
+}
