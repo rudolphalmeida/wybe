@@ -1,55 +1,24 @@
-pub type int_sequence {
-    pub int_sequence(start: int, stride: int, end: int)
-
-    pub def test `[|]`(?value: int, ?rest: int_sequence, current: int_sequence) {
-        int_sequence(?s, ?st, ?en, current)
-
-        if {
-            st < 0 :: (s > en)
-            | otherwise :: (s < en)
-        }
-
-        ?value = s
-        ?rest = int_sequence(s + st, st, en)
+type raw_int_array is address {
+    pub def raw_index(current: raw_int_array, index: int, size_in_bytes: int, ?ret_value: int) {
+        foreign lpvm access(current, index * 8, size_in_bytes, 0, ?ret_value)
     }
 }
 
-pub def xrange(start: int, stride: int, end: int): int_sequence =
-    int_sequence(start, stride, end)
-
-#pub def array(size: int, value: int, ?buffer: int_array) {
-    # TODO: alloc does not take a runtime size. Never reaches "alloc"
-    # codegen in Blocks.hs. Fails in AliasAnalysis
-    #?buffer = foreign lpvm alloc(size * 8 + 8)
-
-    #foreign lpvm mutate(buffer, ?buffer, 0, true, 8, 0, size)
-    #?start_address = buffer:!int
-    #?moved_start = start_address + 8
-    #?buffer = moved_start:!int_array
-    #?buffer = (buffer:!int + 8):!int_array
-
-    #for i in xrange(0, 8, size * 8) {
-    #    foreign lpvm mutate(buffer, ?buffer, i, true, 8, 0, value)
-    #}
-#}
-
-type raw_int_array is address {}
-
-def alloc_raw_int_array(size: int, init_value: int, ?buffer: raw_int_array) {
+def alloc_raw_int_array(size: int, ?buffer: raw_int_array) {
     ?buffer = foreign lpvm alloc(size * 8)
-    ?byte_size = size * 8
-
-    for i in xrange(0, 8, byte_size) {
-        foreign lpvm mutate(buffer, ?buffer, i, 1, byte_size, 0, init_value)
-    }
 }
 
 pub type int_array {
     pub int_array(buffer: raw_int_array, size: int)
+
+    pub def index(current: int_array, index: int, ?value: int) {
+        raw_index(buffer(current), index, size(current) * 8, ?value)
+    }
 }
 
-pub def array(size: int, value: int, ?res_array: int_array) {
-    ?raw_array = alloc_raw_int_array(size, value)
-
+pub def array(size: int, ?res_array: int_array) {
+    ?raw_array = alloc_raw_int_array(size)
     ?res_array = int_array(raw_array, size)
 }
+
+?a = array(10)
