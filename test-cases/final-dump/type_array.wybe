@@ -3,6 +3,10 @@ type raw_int_array is address {
         foreign lpvm access(current, index * 8, size_in_bytes, 0, ?ret_value)
     }
 
+    pub def raw_set(current: raw_int_array, index: int, value: int, size_in_bytes: int, ?mod_buffer: raw_int_array) {
+        foreign lpvm mutate(current, ?mod_buffer, index * 8, 1, size_in_bytes, 0, value)
+    }
+
     pub def `=`(left: raw_int_array, right: raw_int_array, ?res:bool) {
         foreign llvm icmp eq(left, right, ?res)
     }
@@ -20,6 +24,11 @@ pub type int_array {
         raw_index(raw_buffer, index, size(current) * 8, ?value)
     }
 
+    pub def set(current: int_array, index: int, value: int, ?mod_array: int_array) {
+        ?mod_buf = raw_set(buffer(current), index, value, size(current) * 8)
+        ?mod_array = int_array(mod_buf, size(current))
+    }
+
     pub def test `=`(left: int_array, right: int_array) {
         int_array(?left_buffer, ?left_size, left)
         int_array(?right_buffer, ?right_size, right)
@@ -35,3 +44,9 @@ pub def array(size: int, ?res_array: int_array) {
 }
 
 ?a = array(10)
+?b = set(a, 0, 10)
+!println(index(b, 0))
+!println(index(a, 0))
+?b = set(b, 0, 5)
+!println(index(b, 0))
+!println(index(a, 0))
