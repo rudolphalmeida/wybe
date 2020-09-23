@@ -2,17 +2,30 @@ type raw_int_array is address {
     pub def raw_index(current: raw_int_array, index: int, size_in_bytes: int, ?ret_value: int) {
         foreign lpvm access(current, index * 8, size_in_bytes, 0, ?ret_value)
     }
+
+    pub def `=`(left: raw_int_array, right: raw_int_array, ?res:bool) {
+        foreign llvm icmp eq(left, right, ?res)
+    }
 }
 
 def alloc_raw_int_array(size: int, ?buffer: raw_int_array) {
-    ?buffer = foreign lpvm alloc(size * 8)
+    foreign lpvm alloc(size * 8, ?buffer:!raw_int_array)
 }
 
 pub type int_array {
     pub int_array(buffer: raw_int_array, size: int)
 
     pub def index(current: int_array, index: int, ?value: int) {
-        raw_index(buffer(current), index, size(current) * 8, ?value)
+        buffer(current, ?raw_buffer)
+        raw_index(raw_buffer, index, size(current) * 8, ?value)
+    }
+
+    pub def test `=`(left: int_array, right: int_array) {
+        int_array(?left_buffer, ?left_size, left)
+        int_array(?right_buffer, ?right_size, right)
+
+        (left_size = right_size)
+        (left_buffer = right_buffer)
     }
 }
 
