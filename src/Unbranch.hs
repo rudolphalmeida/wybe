@@ -383,6 +383,7 @@ unbranchStmt detism stmt@(ProcCall _ _ _ calldetism _ args) pos stmts alt
       Failure  -> return [maybePlace stmt pos] -- no execution after Failure
       Det      -> leaveStmtAsIs detism stmt pos stmts alt sense
       SemiDet  -> shouldnt "SemiDet case already covered!"
+      NonDet   -> shouldnt "NonDet case not implemented!"
 unbranchStmt detism stmt@(ForeignCall _ _ _ args) pos stmts alt sense = do
     logUnbranch $ "Unbranching foreign call " ++ showStmt 4 stmt
     defArgs args

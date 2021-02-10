@@ -141,6 +141,7 @@ succeedIfSemiDet Terminal = []
 succeedIfSemiDet Failure  = []
 succeedIfSemiDet Det      = []
 succeedIfSemiDet SemiDet  = [succeedTest]
+succeedIfSemiDet NonDet   = [] -- TODO: Check if this is correct
 
 
 -- |A TestBool statement that always fails

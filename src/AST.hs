@@ -152,9 +152,12 @@ data Visibility = Private | Public
 -- reaches a given program point.  Det means it will definitely succeed, Failure
 -- means it will definitely fail, SemiDet means it could either succeed or fail,
 -- and Terminal means it won't do either (so execution will not reach that
--- point).  This values form a lattice, with Terminal at the bottom, SemiDet at
+-- point). NonDet means it can either succeed or fail multiple times. Meant
+-- to be used for generators.
+-- TODO: Should NonDet fail only once to signal exhaustion?
+-- This values form a lattice, with Terminal at the bottom, SemiDet at
 -- the top, and Failure and Det incomparable values between them.
-data Determinism = Terminal | Failure | Det | SemiDet
+data Determinism = Terminal | Failure | Det | SemiDet | NonDet
                   deriving (Eq, Ord, Show, Generic)
 
 
@@ -177,6 +180,7 @@ determinismSucceed Terminal = Terminal
 determinismSucceed Failure  = Det
 determinismSucceed Det      = Det
 determinismSucceed SemiDet  = Det
+determinismSucceed NonDet   = NonDet
 
 
 -- |Force the specified determinism to fail, if it is reachable.
@@ -185,6 +189,7 @@ determinismFail  Terminal = Terminal
 determinismFail  Failure  = Failure
 determinismFail  Det      = Failure
 determinismFail  SemiDet  = Failure
+determinismFail  NonDet   = Failure
 
 
 -- |Lattice join for Determinism.
@@ -200,6 +205,7 @@ determinismJoin det1 det2 = max det1 det2
 determinismSeq :: Determinism -> Determinism -> Determinism
 determinismSeq Terminal _        = Terminal
 determinismSeq Failure  _        = Failure
+determinismSeq NonDet Terminal   = Failure
 determinismSeq _        Terminal = Terminal
 determinismSeq _        Failure  = Failure
 determinismSeq det1     det2     = max det1 det2
@@ -212,6 +218,7 @@ determinismProceding Terminal = False
 determinismProceding Failure  = False
 determinismProceding Det      = True
 determinismProceding SemiDet  = True
+determinismProceding NonDet   = True
 
 
 -- |A suitable printable name for each determinism.
@@ -220,6 +227,7 @@ determinismName Terminal = "terminal"
 determinismName Failure  = "failing"
 determinismName Det      = ""
 determinismName SemiDet  = "test"
+determinismName NonDet   = "generator"
 
 
 -- | Internal representation of data

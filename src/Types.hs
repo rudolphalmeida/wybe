@@ -1156,6 +1156,9 @@ addBindings vars st@BindingState{bindingDetism=Det} =
     st {bindingVars=(vars `Set.union`) <$> bindingVars st}
 addBindings vars st@BindingState{bindingDetism=SemiDet} =
     st {bindingVars=(vars `Set.union`) <$> bindingVars st}
+-- TODO: Check if this is correct
+addBindings vars st@BindingState{bindingDetism=NonDet} =
+    st {bindingVars=(vars `Set.union`) <$> bindingVars st}
 
 
 -- | Returns the deterministic version of the specified binding state.
