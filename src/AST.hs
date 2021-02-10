@@ -2067,6 +2067,9 @@ foldStmt' sfn efn val (UseResources _ body) = foldStmts sfn efn val body
 --     foldStmts sfn efn val ss
 foldStmt' _   _   val Break = val
 foldStmt' _   _   val Next = val
+-- TODO: Confirm what this is exactly supposed to do
+foldStmt' sfn efn val (Generator body) = last returns
+    where returns = List.map (foldStmts sfn efn val) body
 
 
 -- |Fold over a list of expressions in a pre-order left-to-right traversal.
@@ -2332,6 +2335,11 @@ data Stmt
      -- | A scoped construct for resources.  This is eliminated during resource
      --   processing.
      | UseResources [ResourceSpec] [Placed Stmt]
+
+     -- A generator statement is multiple generator expressions, also called as
+     -- "alternatives", seperated by `||`. Each alternative is a collection of
+     -- statements ("have") to result in a return value
+     | Generator [[Placed Stmt]]
 
      -- All the following are eliminated during unbranching.
 
@@ -3090,6 +3098,10 @@ showStmt _ (Fail) = "fail"
 --     "for " ++ show itr ++ " in " ++ show gen
 showStmt _ (Break) = "break"
 showStmt _ (Next) = "next"
+showStmt indent (Generator body) =
+    "yield {"
+    ++ "FIXME: generator body"
+    ++ "}" 
 
 
 -- |Show a proc body, with the specified indent.

@@ -278,15 +278,16 @@ processProcModifiers =
 
 
 processProcModifier :: ProcModifiers -> String -> ProcModifiers
-processProcModifier ms "test"     = updateModsDetism   ms "test" SemiDet
-processProcModifier ms "partial"  = updateModsDetism   ms "partial" SemiDet
-processProcModifier ms "failing"  = updateModsDetism   ms "failing" Failure
-processProcModifier ms "terminal" = updateModsDetism   ms "terminal" Terminal
-processProcModifier ms "inline"   = updateModsInlining ms "inline" Inline
-processProcModifier ms "noinline" = updateModsInlining ms "noinline" NoInline
-processProcModifier ms "pure"     = updateModsImpurity   ms "pure" PromisedPure
-processProcModifier ms "semipure" = updateModsImpurity   ms "semipure" Semipure
-processProcModifier ms "impure"   = updateModsImpurity   ms "impure" Impure
+processProcModifier ms "test"      = updateModsDetism   ms "test" SemiDet
+processProcModifier ms "partial"   = updateModsDetism   ms "partial" SemiDet
+processProcModifier ms "failing"   = updateModsDetism   ms "failing" Failure
+processProcModifier ms "terminal"  = updateModsDetism   ms "terminal" Terminal
+processProcModifier ms "generator" = updateModsDetism   ms "generator" NonDet
+processProcModifier ms "inline"    = updateModsInlining ms "inline" Inline
+processProcModifier ms "noinline"  = updateModsInlining ms "noinline" NoInline
+processProcModifier ms "pure"      = updateModsImpurity ms "pure" PromisedPure
+processProcModifier ms "semipure"  = updateModsImpurity ms "semipure" Semipure
+processProcModifier ms "impure"    = updateModsImpurity ms "impure" Impure
 processProcModifier ms modName    =
     ms {modifierUnknown=modName:modifierUnknown ms}
     
@@ -398,6 +399,7 @@ stmtParser =
           <|> ifStmtParser
           <|> useStmt
           <|> simpleStmt
+          <|> generatorStmtParser
 
 nopStmt :: Parser (Placed Stmt)
 nopStmt = do
@@ -509,6 +511,12 @@ ifCaseParser = do
 --                     rel
 --     return $ Placed (TestBool e) pos
 
+
+generatorStmtParser :: Parser (Placed Stmt)
+generatorStmtParser = do
+    pos <- tokenPosition <$> ident "yield"
+    genExps <- betweenB Brace $ many1 stmtParser `sepBy` symbol "||"
+    return $ Placed (Generator genExps) pos
 
 
 useStmt :: Parser (Placed Stmt)
@@ -996,4 +1004,5 @@ keywords =
     [ "if", "then", "else", "def", "use"
     , "do",  "until", "unless", "test", "import"
     , "while", "foreign", "in", "when"
+    , "yield"
     ]

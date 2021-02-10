@@ -1,0 +1,9 @@
+def {generator} hello use !io {
+    !println("Hello, World!")
+
+    yield {
+        ?x = 1
+        ||
+        ?x = 2
+    }
+}
