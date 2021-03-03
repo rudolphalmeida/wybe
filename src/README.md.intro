@@ -1,6 +1,6 @@
 # Wybe compiler
 
-The architecture of the Wybe compiler has the following structure:
+The architecture of the Wybe compiler exhibits the following structure:
 
 ![Compiler Architecture](Compiler.png)
 
@@ -16,4 +16,3 @@ optimisation.  This part can be seen in more detail as several separate passes:
 ![Compilation detail](Detail.png)
 
 # Wybe compiler source directory
-

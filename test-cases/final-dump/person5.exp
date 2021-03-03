@@ -1,8 +1,8 @@
 ======================================================================
 AFTER EVERYTHING:
  Module person5
-  public submods  : 
-  public types    : person: (person5.person,Just address)
+  representation  : (not a type)
+  public submods  : person -> person5.person
   public resources: 
   public procs    : person5.<0>
                     person5.person./=<0>
@@ -15,7 +15,6 @@ AFTER EVERYTHING:
                     person5.person.person<1>
   imports         : public use person5.person
                     use wybe
-  types           : person/public  is address { person(firstname:string, lastname:string) @person5:1:23  }  @person5:1:5
   resources       : 
   submodules      : person5.person
   procs           : 
@@ -104,8 +103,8 @@ entry:
 }
 --------------------------------------------------
  Module person5.person
+  representation  : address
   public submods  : 
-  public types    : 
   public resources: 
   public procs    : person5.person./=<0>
                     person5.person.=<0>
@@ -117,7 +116,6 @@ entry:
                     person5.person.person<1>
   imports         : use person5
                     use wybe
-  types           : 
   resources       : 
   procs           : 
 
@@ -191,7 +189,7 @@ person > public {inline} (0 calls)
 0: person(firstname#0:wybe.string, lastname#0:wybe.string, ?$#0:person5.person):
  AliasPairs: []
  InterestingCallProperties: []
-    foreign lpvm alloc(16:wybe.int, ?$rec#0:!person5.person)
+    foreign lpvm alloc(16:wybe.int, ?$rec#0:person5.person)
     foreign lpvm mutate(~%$rec#0:person5.person, ?%$rec#1:person5.person, 0:wybe.int, 1:wybe.int, 16:wybe.int, 0:wybe.int, ~firstname#0:wybe.string)
     foreign lpvm mutate(~%$rec#1:person5.person, ?%$#0:person5.person, 8:wybe.int, 1:wybe.int, 16:wybe.int, 0:wybe.int, ~lastname#0:wybe.string)
 person > public {inline} (6 calls)

@@ -1,8 +1,8 @@
 ======================================================================
 AFTER EVERYTHING:
  Module coordinate
-  public submods  : 
-  public types    : Coordinate: (coordinate.Coordinate,Just address)
+  representation  : (not a type)
+  public submods  : Coordinate -> coordinate.Coordinate
   public resources: 
   public procs    : coordinate.<0>
                     coordinate.fcopy<0>
@@ -18,7 +18,6 @@ AFTER EVERYTHING:
                     coordinate.Coordinate.z<1>
   imports         : public use coordinate.Coordinate
                     use wybe
-  types           : Coordinate/public  is address { Coordinate(x:int, y:int, z:int) @coordinate:1:27  }  @coordinate:1:5
   resources       : 
   submodules      : coordinate.Coordinate
   procs           : 
@@ -118,8 +117,8 @@ entry:
 }
 --------------------------------------------------
  Module coordinate.Coordinate
+  representation  : address
   public submods  : 
-  public types    : 
   public resources: 
   public procs    : coordinate.Coordinate./=<0>
                     coordinate.Coordinate.=<0>
@@ -133,7 +132,6 @@ entry:
                     coordinate.Coordinate.z<1>
   imports         : use coordinate
                     use wybe
-  types           : 
   resources       : 
   procs           : 
 
@@ -198,7 +196,7 @@ Coordinate > public {inline} (0 calls)
 0: Coordinate(x#0:wybe.int, y#0:wybe.int, z#0:wybe.int, ?$#0:coordinate.Coordinate):
  AliasPairs: []
  InterestingCallProperties: []
-    foreign lpvm alloc(24:wybe.int, ?$rec#0:!coordinate.Coordinate)
+    foreign lpvm alloc(24:wybe.int, ?$rec#0:coordinate.Coordinate)
     foreign lpvm mutate(~%$rec#0:coordinate.Coordinate, ?%$rec#1:coordinate.Coordinate, 0:wybe.int, 1:wybe.int, 24:wybe.int, 0:wybe.int, ~x#0:wybe.int)
     foreign lpvm mutate(~%$rec#1:coordinate.Coordinate, ?%$rec#2:coordinate.Coordinate, 8:wybe.int, 1:wybe.int, 24:wybe.int, 0:wybe.int, ~y#0:wybe.int)
     foreign lpvm mutate(~%$rec#2:coordinate.Coordinate, ?%$#0:coordinate.Coordinate, 16:wybe.int, 1:wybe.int, 24:wybe.int, 0:wybe.int, ~z#0:wybe.int)

@@ -1,15 +1,14 @@
 ======================================================================
 AFTER EVERYTHING:
  Module alias_multifunc1
+  representation  : (not a type)
   public submods  : 
-  public types    : 
   public resources: 
   public procs    : alias_multifunc1.<0>
                     alias_multifunc1.replicate1<0>
                     alias_multifunc1.replicate2<0>
   imports         : use position
                     use wybe
-  types           : 
   resources       : 
   procs           : 
 
@@ -223,8 +222,8 @@ entry:
 }
 --------------------------------------------------
  Module position
-  public submods  : 
-  public types    : position: (position.position,Just address)
+  representation  : (not a type)
+  public submods  : position -> position.position
   public resources: 
   public procs    : position.printPosition<0>
                     position.position./=<0>
@@ -237,7 +236,6 @@ entry:
                     position.position.y<1>
   imports         : public use position.position
                     use wybe
-  types           : position/public  is address { position(x:int, y:int) @position:1:25  }  @position:1:5
   resources       : 
   submodules      : position.position
   procs           : 
@@ -309,8 +307,8 @@ entry:
 }
 --------------------------------------------------
  Module position.position
+  representation  : address
   public submods  : 
-  public types    : 
   public resources: 
   public procs    : position.position./=<0>
                     position.position.=<0>
@@ -322,7 +320,6 @@ entry:
                     position.position.y<1>
   imports         : use position
                     use wybe
-  types           : 
   resources       : 
   procs           : 
 
@@ -368,7 +365,7 @@ position > public {inline} (0 calls)
 0: position(x#0:wybe.int, y#0:wybe.int, ?$#0:position.position):
  AliasPairs: []
  InterestingCallProperties: []
-    foreign lpvm alloc(16:wybe.int, ?$rec#0:!position.position)
+    foreign lpvm alloc(16:wybe.int, ?$rec#0:position.position)
     foreign lpvm mutate(~%$rec#0:position.position, ?%$rec#1:position.position, 0:wybe.int, 1:wybe.int, 16:wybe.int, 0:wybe.int, ~x#0:wybe.int)
     foreign lpvm mutate(~%$rec#1:position.position, ?%$#0:position.position, 8:wybe.int, 1:wybe.int, 16:wybe.int, 0:wybe.int, ~y#0:wybe.int)
 position > public {inline} (6 calls)

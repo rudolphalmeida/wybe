@@ -25,8 +25,8 @@ Wybe comments begin with a hash (`#`) character and continue to the end
 of the line.
 
 The leading exclamation point is needed on statements that perform input/output,
-and in a few other contexts that will be explained in Section
-[Resources](#resources).
+and in a few other contexts that will be explained in the
+[Resources](#resources) section.
 
 
 ## Building
@@ -61,6 +61,7 @@ It may contain the following sorts of items:
 statements,
 function definitions,
 procedure definitions,
+constructor declarations,
 type declarations,
 resource declarations, and
 module declarations.
@@ -84,7 +85,7 @@ containing this declaration.
 In effect, this re-exports everything imported from the named module(s).
 
 
-## Primitive types
+##  <a name="primitives"></a>Primitive types
 
 Wybe has the usual complement of primitive types:
 
@@ -160,7 +161,7 @@ to that procedure.
 
 A procedure call must be preceded by an exclamation point (`!`) if it uses any
 resources, as described in the section on
-[calling a resourceful procedure](calling resourceful).
+[calling a resourceful procedure](#calling resourceful).
 
 A procedure whose name consists of any number of the operator characters
 ```
@@ -232,6 +233,25 @@ may use the alternative infix syntax:
 > *arg* *op* *arg*,
 
 where *op* is the function name (there must be exactly two arguments).
+
+
+##  <a name="type constraints"></a>Type constraints
+In most cases, the compiler can determine the types of expressions used in your
+code.  However, occasionally the compiler needs some help in resolving
+overloading.  For example, a procedure `read(?value)` may be overloaded such
+that it can read various forms of input, such as integers, floating point
+numbers, and strings.  If a later operation uniquely determines the
+expressions's type, the compiler will work this out.  However, if other
+references to the variables do not uniquely determine a type, you will need to
+explicitly specify the expression type.  This is done by following the expression with its type, separated by a colon, similar to the way parameter types are specified:
+
+> *expr* `:` *type*
+
+For example,
+
+```
+read(?value:int)
+```
 
 
 ## Function definitions
@@ -494,45 +514,48 @@ A submodule is declared as follows:
 where *name* is the module name and *items* are the contents of the submodule.
 
 
-## Type declarations
+## <a name="constructors"></a>Constructor declarations
 
-Wybe provides an algebraic type system.
-Types may be declared with the syntax:
+Wybe supports abstract algebraic data types. Every Wybe type is a module, and
+each type's primitive operations are the operations of that module. A module
+becomes a type just by declaring the type's constructor(s) with a declaration of
+the form:
 
-> `type` *type* `{` *ctors* *defs* `}`
+> `constructors` *ctors*
 
-where *ctors* is one or more constructor declaration, separated by vertical bar
-characters (`|`).
-To make the declared *type* public, precede the `type` keyword with the keyword
-`pub`.
-If you wish for the constructors of the type public,
-precede the first constructor declaration with the `pub` keyword
-(this makes all the constructors public).
+where *ctors* is one or more constructor declarations, separated by vertical bar
+characters (`|`).  Each constructor declaration takes the same form as the
+prototype part of a function declaration:
 
-The *defs* part may be empty, but if specified, may include any number of
-procedure and function declarations, which will have full access to the
-constructors of the type, whether or not they are public.
+> *name*`(`*param*`:`*type*, ... *param*`:`*type*`)`
 
-Each constructor declaration takes the form of a function declaration (with no
-function body):
+This declaration defines a constructor function that takes parameters of the
+specified types and returns a value of the type being defined (namely, the
+current module) holding all the provided data.  Constructor functions can also
+be used "backwards", with the constructed value provided and the arguments taken
+as outputs, to extract the data stored in the constructed value.
 
-> *ctor*`(`*member*`:`*memtype*, ... *member*`:`*memtype*`)`
+The form of declaration above keeps the constructors of a type private; they may
+be used within the current module, but not outside.  To make the constructors
+public, simply precede the `constructor` keyword with `pub`.
 
-Each *ctor* is a distinct constructor name specifying an alternative constructor
-for the *type* being defined.
-Any number of *member*`:`*memtype* pairs may be specified, specifying
-information that must be supplied for that constructor.
-If no members are specified, the parentheses are omitted.
+Note that, unlike most Object Oriented languages, making constructors public
+does not commit you to any particular representation of the type, because
+constructors are not special; they are simply automatically generated functions.
+You may define your own public functions to act as constructors, and they will
+be indistinguishable from the actual constructors by users of the type.
 
-Each constructor defined automatically becomes a function that may be used to
-construct a value of the *type* being defined.
-It also becomes a function that can be used backwards, extracting the
-constructor
-arguments as *outputs*, allowing a value to be deconstructed into its parts.
-For example, given the definition
+As a convenience, you may use the keyword `constructor` instead of
+`constructors` in the declaration; Wybe makes no distinction between them.
+
+For example, you can make the enclosing module define a Cartesian coordinate
+type with the following declaration:
+
 ```
-type coordinate { coordinate(x:int, y:int) }
+pub constructor coordinate(x:int, y:int)
 ```
+
+With this declaration,
 the following statement may be used to construct a Cartesian coordinate with X
 component 7 and Y component 4:
 ```
@@ -543,7 +566,7 @@ And this statement will unpack a coordinate `pos` into variables `x` and `y`:
 coordinate(?x,?y) = pos
 ```
 
-Additionally, two procedures are automatically generate for each *member*:
+Additionally, two procedures are automatically generated for each *member*:
 one to access the member, and one to mutate it.
 The first has the prototype:
 
@@ -597,16 +620,20 @@ x(!pos) = x(pos) + 1  # shift position to the right
 so that it does in fact mutate the coordinate object in place,
 saving an unnecessary object creation.
 
+The `constructors` declaration must specify the forms of all the possible values
+of that type.  Wybe does not support a special *null* or *nil* value.  For
+example, you could define a binary tree type as follows:
+```
+constructors empty | node(left:tree, value:int, right:tree)
+```
+This would be written in a module named `tree`.
+
 Deconstructing a value of a type with multiple constructors,
 or accessing or altering any of its members, is a test, since the
 value may not have the intended constructor.
 This ensures that it is not possible to mistake a value created with one
 constructor for one made with a different constructor.
-For example, if a tree type is defined as:
-```
-type tree { empty | node(left:tree, value:int, right:tree) }
-```
-then it may be used as follows:
+In the `tree` type example, you might write:
 ```
 def {test} member(elt:int, tree:tree) {
     if { node(?left, ?value, ?right) = tree ::
@@ -619,12 +646,82 @@ def {test} member(elt:int, tree:tree) {
 }
 ```
 
-Note that a type is just a special kind of module that is also taken as a valid
-type name.
-The constructors, deconstructors, accessors, and mutators of the type are merely
-members of the type that are automatically generated by the Wybe compiler.
-Any procedures or functions you define inside the type will be indistinguishable
-from its constructors, deconstructors, accessors, and mutators.
+## Type declarations
+
+In some cases, a module may wish to define multiple types.  This can be done by
+declaring separate submodules within the module, and declaring constructors in
+each of those submodules.  As a convenience, Wybe allows the submodule and its
+constructors to be declared with a single declaration of the form:
+
+> `type` *type* `{` *ctors* *defs* `}`
+
+where *type* is the module name and *ctors* declares one or more constructors,
+separated by vertical bar characters (`|`), just as they would appear in a
+`constructor` declaration.
+To make the declared *type* public, precede the `type` keyword with the keyword
+`pub`.
+If you wish for the constructors of the type public,
+precede the first constructor declaration with the `pub` keyword
+(this makes all the constructors public).
+
+The *defs* part may be empty, but if specified, may include any number of
+procedure and function declarations, which will have full access to the
+constructors of the type, whether or not they are public.
+
+
+## <a name="generics"></a>Generic types
+
+Wybe supports *generic* types, sometimes called *parametric polymorphism*. A
+generic type is one that takes other types as parameters, specified by following
+the type name with the desired parameters, separated by commas and enclosed in
+parentheses. For example, the elements of a list must all be the same type, but
+that can be any valid Wybe type; a list of integers can be specified by
+`list(int)` and a list of lists of strings can be specified as
+`list(list(string))`. This allows list operations to work with lists of any
+element type, without the need to separately define different kinds of lists, or
+the operations on them.
+
+The basis of generic types is the *type variable*, which stands for a type we
+don't know yet, and thus is a variable in the type system.  A type variable
+follows the same naming convention as normal program variables, except they are
+always preceded with a question mark.  Since we rarely have more than one or two
+type variables in any given context, we conventionally use a single upper case
+letter for a type variable.
+
+Generic types are defined in the same way as described above, except that:
+
+    * the keyword `constructor` or `constructors` is followed by a list of type
+      variables separated by commas and enclosed in parentheses; and
+    * these type variables may be used as types in the definitions of the
+      constructors of the type.
+
+For example, a generic list type can be defined in module `list` as:
+
+```
+constructors(?T) null | cons(head:?T, tail:list(?T))
+```
+
+If specified with a `type` declaration, this would be written:
+
+```
+type list(?T) {null | cons(head:?T, tail:list(?T)) ... }
+```
+
+All type variables appearing in the definition of any constructor must appear in
+the list of type parameters.
+
+Generic types can also be specified in procedure parameters by using type
+variables.  Each occurrence of the same type variable must signify the same
+type.  For example, you can define list concatenation:
+
+```
+def concat(a:list(?T), b:list(?T)):list(?T) =
+    if cons(?h, ?t) = a then cons(h, concat(t,b)) else b
+```
+
+This will concatenate lists of any type, but the types of the elements of the
+two input lists must be the same, and the result will be a list of the same
+type.
 
 
 ## Resources
@@ -807,11 +904,6 @@ If you wish to include other modifiers along with one of these, include them all
 ### Foreign interface
 
 
-#### Foreign types
-
-To be documented....
-
-
 #### Calling C code
 
 To call C code from Wybe, use the `foreign` construct.
@@ -934,7 +1026,7 @@ Floating point (signed) strictly greater
 - `foreign llvm fcmp_sge(`arg1:float, arg2:float`)`:bool  
 Floating point (signed) greater or equal
 
-##### Integer/floating point conversion
+#####  <a name="conversion"></a>Integer/floating point conversion
 
 - `foreign llvm uitofp(`arg1:int`)`:float  
 Convert unsigned integer to float
@@ -944,6 +1036,79 @@ Convert signed integer to float
 Convert float to unsigned integer
 - `foreign llvm fptosi(`arg1:float`)`:int  
 Convert float to signed integer
+
+
+#### Foreign types
+
+In addition to the [`constructor`](#constructors) declaration, it is possible to
+declare a low-level type by specifying its representation.  This declaration has
+the form:
+
+> `representation is` *rep*
+
+where *rep* has one of these forms:
+
+- `address`  
+the type is a machine address, similar to the `void *` type in C.
+- *n* `bit` *numbertype*  
+a primitive number type comprising *n* bits, where *numbertype* is one of:
+  - `signed`  
+  a signed integer type
+  - `unsigned`  
+  an unsigned integer type
+  - `float`  
+  a floating point number; *n* must be 16, 32, 64, or 128.
+
+Like a `constructor` declaration, a `representation` declaration makes the
+enclosing module into type.  Also like a `constructor` declaration, a submodule
+declaration may be combined with the specification of a representation using the
+form:
+
+> `type` *type* `is` *rep* `{` *defs* `}`
+
+where *rep* is as above, and *defs* specifies other members of the type.
+
+Note that it is not permitted to specify both constructors and an explicit
+representation for a type.
+
+
+#### Type casting
+In some cases, foreign code may need to cast values of one Wybe type to another,
+to satisfy both sides of an interface.  This follows a syntax similar to
+applying [type constraints](#type-constraints), except that the variable is
+separated from its type with a `:!`:
+
+> *expr* `:!` *type*
+
+This differs from an ordinary type constraint in that:
+
+-  this may only be used in foreign calls;
+-  it may only be applied to (input or output) variables; and
+-  it specifies the type of the expression without requiring that the value
+   produced by the expression should be the same; ie, the type of the expression
+   is *changed* to the specified type.
+
+The final point is the key difference:  a *type constraint* specifies the what
+the type of the expression must be, while a *type cast* specifies that its type
+should be converted from whatever it is to the specified type.  A type
+constraint will cause a type error if the specified type is incompatible with
+the type of the expression, while a type cast will silently convert the type.
+
+The behaviour of a type cast is slightly different for input and output
+arguments.  In both cases, a cast specifies the type of the argument to the
+foreign instruction.  For an input argument, this means you are specifying the
+type *to* which the argument should be converted; for an output argument you are
+specifying the type *from* which the argument should be converted.  In most
+cases, for output arguments, you will want to specify the type to convert *to*.
+You can do this by combining a type constraint with a type cast by following the
+output variable name with a type constraint (giving the type to convert *to*),
+and following that with a type cast (giving the type to convert *from*).
+
+It is also important to understand that type casts may extend or truncate the
+value being passed by adding or removing most siginficant bits to the value, but
+it will not change the bits of the value.  If you wish to convert between
+floating point and integer representations, see the [integer/floating point
+conversion](#conversion) instructions.
 
 
 #### Wybe low-level memory management primitives
