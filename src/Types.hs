@@ -843,7 +843,7 @@ bodyCalls (pstmt:pstmts) detism = do
         ForeignCall{} -> return $ (pstmt,detism):rest
         TestBool _ -> return rest
         And stmts -> bodyCalls stmts detism
-        Or stmts _ -> bodyCalls stmts detism
+        DetOr stmts _ -> bodyCalls stmts detism
         Not stmt -> bodyCalls [stmt] detism
         Nop -> return rest
         Fail -> return rest
@@ -1509,13 +1509,13 @@ modecheckStmt m name defPos typing delayed assigned detism
       modecheckStmts m name defPos typing [] assigned detism stmts
     return ([maybePlace (And stmts') pos], delayed, assigned', errs')
 modecheckStmt m name defPos typing delayed assigned detism
-    stmt@(Or stmts _) pos = do
+    stmt@(DetOr stmts _) pos = do
     logTypes $ "Mode checking disjunction " ++ show stmt
     -- XXX must mode check individually and join the resulting states
     (stmts', assigned', errs') <-
       modecheckStmts m name defPos typing [] assigned detism stmts
     let vars = Map.fromSet (`varType` typing) <$> bindingVars assigned'
-    return ([maybePlace (Or stmts' vars) pos], delayed,
+    return ([maybePlace (DetOr stmts' vars) pos], delayed,
             assigned', errs')
 modecheckStmt m name defPos typing delayed assigned detism
     (Not stmt) pos = do
@@ -1800,7 +1800,7 @@ checkStmtTyped name pos (ForeignCall _ pname _ args) ppos =
 checkStmtTyped _ _ (TestBool _) _ = return ()
 checkStmtTyped name pos (And stmts) _ppos =
     mapM_ (placedApply (checkStmtTyped name pos)) stmts
-checkStmtTyped name pos stmt@(Or stmts exitVars) _ppos = do
+checkStmtTyped name pos stmt@(DetOr stmts exitVars) _ppos = do
     when (isNothing exitVars) $
          shouldnt $ "exit vars of disjunction undetermined: " ++ showStmt 4 stmt
     mapM_ (placedApply (checkStmtTyped name pos)) stmts

@@ -1,0 +1,70 @@
+# Code generation for the following generator:
+# def {generator} int_seq(start: int, end: int, ?val: int) {
+#     (start < end)
+#     generate {
+#         ?val = start
+#     |>
+#         ?val = start + 1
+#     |>
+#         int_seq(start + 1, end, ?val)
+#     }
+#     ?val = val + 1
+# }
+
+type State {
+    State(start: int, end: int, altIndex: int)
+}
+
+def initAlternatives(start: int, end: int, ?state: State, ?val: int) {
+    # Run first alternative
+    ?val = start
+
+    # State for next solution
+    ?state = State(start, end, 1)
+}
+
+def {test} nextAlternative(!state: State, ?val: int) {
+    (State(?start, ?end, ?altIndex) = state)
+
+    if {
+        altIndex = 1 ::
+            ?val = start + 1
+            ?state = State(start, end, 2)
+        | altIndex = 2 ::
+            if {
+                initIntSeq(start + 2, end, ?val, ?state) :: pass
+            }
+        | otherwise :: fail
+    }
+
+    ?val = 0
+}
+
+def {test} initIntSeq(start: int, end: int, ?val: int, ?state: State) {
+    (start < end)
+    
+    initAlternatives(start, end, ?state, ?val)
+
+    ?val = val + 1
+}
+
+def {test} nextIntSeq(!state: State, ?val: int) {
+    nextAlternative(!state, ?val)
+    ?val = val + 1
+}
+
+# Code for corresponding for-loop
+# for ?val in int_seq(0, 10) {
+#    !println(val)
+#}
+
+if {
+    initIntSeq(0, 10, ?val, ?state) ::
+        do {
+            !println(val)
+
+            while nextIntSeq(!state, ?val)
+        }
+    | otherwise :: pass
+}
+

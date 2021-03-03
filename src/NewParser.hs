@@ -416,15 +416,6 @@ simpleStmt = try procCallParser
 testStmt :: Parser (Placed Stmt)
 testStmt =
           fmap expToStmt <$> simpleExpParser
-          -- XXX Need to handle and, or, and not
-          -- (   do pos <- tokenPosition <$> ident "and"
-          --        rest <- testStmt
-          --        return maybePlace (And [stmt1,rest]) pos
-          -- <|> do pos <- tokenPosition <$> ident "or"
-          --        rest <- testStmt
-          --        return maybePlace (And [stmt1,rest]) pos
-          -- <|> return [stmt1]
-          -- )
 
 
 -- | A simple proc call stmt.
@@ -512,11 +503,16 @@ ifCaseParser = do
 --     return $ Placed (TestBool e) pos
 
 
+--- generate {
+
+-- }
+
 generatorStmtParser :: Parser (Placed Stmt)
 generatorStmtParser = do
-    pos <- tokenPosition <$> ident "yield"
-    genExps <- betweenB Brace $ many1 stmtParser `sepBy` symbol "||"
-    return $ Placed (Generator genExps) pos
+    pos <- tokenPosition <$> ident "generate"
+    -- TODO: Fix parser
+    disjuncts <- betweenB Brace $ many1 stmtParser `sepBy` symbol "|>"
+    return $ Placed (NonDetOr disjuncts Nothing) pos
 
 
 useStmt :: Parser (Placed Stmt)
@@ -659,9 +655,12 @@ completeOperatorTable =
       ]
     , [ prefix "~" ]
     , [ binary "&&" AssocLeft ]
-    , [ binary "||"  AssocLeft ]
+    , [ binary "||" AssocLeft ]
+    , [binary "|>" AssocLeft]
     , [ Postfix whereBodyParser]
     ]
+
+    
 
 -- | Wybe relational operators table, separated out for test statements.
 relOperatorTable :: WybeOperatorTable (Placed Exp)
@@ -1004,5 +1003,5 @@ keywords =
     [ "if", "then", "else", "def", "use"
     , "do",  "until", "unless", "test", "import"
     , "while", "foreign", "in", "when"
-    , "yield"
+    , "generate"
     ]

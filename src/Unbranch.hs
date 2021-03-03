@@ -97,6 +97,7 @@ unbranchProc :: ProcDef -> Compiler ProcDef
 unbranchProc = unbranchProc' Nothing
 
 
+-- -> Compiler [ProcDef]
 unbranchProc' :: Maybe LoopInfo -> ProcDef -> Compiler ProcDef
 unbranchProc' loopinfo proc = do
     logMsg Unbranch $ "** Unbranching proc " ++ procName proc ++ ":"
@@ -406,7 +407,7 @@ unbranchStmt detism stmt@(And conj) pos stmts alt sense =
     $ do
       logUnbranch $ "Unbranching conjunction " ++ show stmt
       unbranchStmts SemiDet (conj ++ stmts) alt sense
-unbranchStmt detism stmt@(Or disjs exitVars) _ stmts alt sense = do
+unbranchStmt detism stmt@(DetOr disjs exitVars) _ stmts alt sense = do
     ifSemiDet detism ("Disjunction in a Det context: " ++ show stmt)
     $ do
       let exitVars' = trustFromJust "unbranching Disjunction without exitVars"

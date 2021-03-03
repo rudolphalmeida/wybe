@@ -172,14 +172,14 @@ transformStmt tmp stmt@(TestBool var) pos =
 transformStmt tmp (And stmts) pos = do
     (stmts',tmp') <- transformBody tmp stmts
     return ([maybePlace (And stmts') pos], tmp')
-transformStmt tmp (Or [] _) pos =
+transformStmt tmp (DetOr [] _) pos =
     return ([failTest], tmp)
-transformStmt tmp (Or [stmt] _) pos = do
+transformStmt tmp (DetOr [stmt] _) pos = do
     placedApplyM (transformStmt tmp) stmt
-transformStmt tmp (Or (stmt:stmts) vars) pos = do
+transformStmt tmp (DetOr (stmt:stmts) vars) pos = do
     (stmt',tmp')  <- placedApplyM (transformStmt tmp) stmt
-    (stmt'',tmp'') <- transformStmt tmp' (Or stmts vars) pos
-    return ([maybePlace (Or [(makeSingleStmt stmt'),(makeSingleStmt stmt'')] vars)
+    (stmt'',tmp'') <- transformStmt tmp' (DetOr stmts vars) pos
+    return ([maybePlace (DetOr [(makeSingleStmt stmt'),(makeSingleStmt stmt'')] vars)
               pos], tmp'')
 transformStmt tmp (Not stmt) pos = do
     (stmt',tmp') <- placedApplyM (transformStmt tmp) stmt

@@ -1,9 +1,7 @@
-def {generator} hello use !io {
-    !println("Hello, World!")
-
-    yield {
+def {generator} hello(?x: int) {
+    generate {
         ?x = 1
-        ||
+        |>
         ?x = 2
     }
 }

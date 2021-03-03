@@ -24,7 +24,7 @@ module AST (
   TypeProto(..), TypeSpec(..), TypeRef(..), VarDict, TypeImpln(..),
   ProcProto(..), Param(..), TypeFlow(..), paramTypeFlow,
   PrimProto(..), PrimParam(..), ParamInfo(..),
-  Exp(..), Generator(..), Stmt(..), detStmt, expIsConstant,
+  Exp(..), Stmt(..), detStmt, expIsConstant,
   TypeRepresentation(..), TypeFamily(..), typeFamily,
   defaultTypeRepresentation, typeRepSize, integerTypeRep,
   lookupTypeRepresentation,
@@ -2056,7 +2056,7 @@ foldStmt' sfn efn val (Cond tst thn els _) = val4
           val3 = foldStmts sfn efn val2 thn
           val4 = foldStmts sfn efn val3 els
 foldStmt' sfn efn val (And stmts) = foldStmts sfn efn val stmts
-foldStmt' sfn efn val (Or stmts _) = foldStmts sfn efn val stmts
+foldStmt' sfn efn val (DetOr stmts _) = foldStmts sfn efn val stmts
 foldStmt' sfn efn val (Not negated) = foldStmt sfn efn val $ content negated
 foldStmt' sfn efn val (TestBool exp) = foldExp sfn efn val exp
 foldStmt' _   _   val Nop = val
@@ -2068,8 +2068,8 @@ foldStmt' sfn efn val (UseResources _ body) = foldStmts sfn efn val body
 foldStmt' _   _   val Break = val
 foldStmt' _   _   val Next = val
 -- TODO: Confirm what this is exactly supposed to do
-foldStmt' sfn efn val (Generator body) = last returns
-    where returns = List.map (foldStmts sfn efn val) body
+foldStmt' sfn efn val (NonDetOr disjuncts _) = last returns
+    where returns = List.map (foldStmts sfn efn val) disjuncts
 
 
 -- |Fold over a list of expressions in a pre-order left-to-right traversal.
@@ -2336,10 +2336,9 @@ data Stmt
      --   processing.
      | UseResources [ResourceSpec] [Placed Stmt]
 
-     -- A generator statement is multiple generator expressions, also called as
-     -- "alternatives", seperated by `||`. Each alternative is a collection of
-     -- statements ("have") to result in a return value
-     | Generator [[Placed Stmt]]
+     -- Unlike a DetOr a NonDetOr can have multiple statements in each disjunct
+     -- Try: Replace [Placed Stmt] with And [Placed Stmt]
+     | NonDetOr [[Placed Stmt]] (Maybe VarDict)
 
      -- All the following are eliminated during unbranching.
 
@@ -2349,7 +2348,7 @@ data Stmt
      | And [Placed Stmt]
      -- |A test that succeeds iff any of the enclosed tests succeed; the VarDict
      -- indicates the variables defined after all disjuncts
-     | Or [Placed Stmt] (Maybe VarDict)
+     | DetOr [Placed Stmt] (Maybe VarDict)
      -- |A test that succeeds iff the enclosed test fails
      | Not (Placed Stmt)
 
@@ -2373,7 +2372,7 @@ detStmt (ProcCall _ _ _ SemiDet _ _) = False
 detStmt (TestBool _) = False
 detStmt (Cond _ thn els _) = all detStmt $ List.map content $ thn++els
 detStmt (And list) = all detStmt $ List.map content list
-detStmt (Or list _) = all detStmt $ List.map content list
+detStmt (DetOr list _) = all detStmt $ List.map content list
 detStmt (Not _) = False
 detStmt _ = True
 
@@ -2481,8 +2480,8 @@ isProcProtoArg _ _ = False
 
 -- |A loop generator (ie, an iterator).  These need to be
 --  generalised, allowing them to be user-defined.
-data Generator
-      = In VarName (Placed Exp)
+-- data Generator
+--       = In VarName (Placed Exp)
 
 -- |A variable name in SSA form, ie, a name and an natural number suffix,
 --  where the suffix is used to specify which assignment defines the value.
@@ -2633,7 +2632,8 @@ argFlowDescription FlowOut = "output"
 -- |Convert a statement read as an expression to a Stmt.
 expToStmt :: Exp -> Stmt
 expToStmt (Fncall [] "&&" args) = And $ List.map (fmap expToStmt) args
-expToStmt (Fncall [] "||"  args) = Or (List.map (fmap expToStmt) args) Nothing
+expToStmt (Fncall [] "||"  args) = DetOr (List.map (fmap expToStmt) args) Nothing
+-- expToStmt (Fncall [] "|" args) = DetOr (List.map (fmap expToStmt) args) Nothing
 expToStmt (Fncall [] "~" [arg]) = Not $ fmap expToStmt arg
 expToStmt (Fncall [] "~" args) = shouldnt $ "non-unary 'not' " ++ show args
 expToStmt (Fncall maybeMod name args) =
@@ -3068,7 +3068,7 @@ showStmt indent (And stmts) =
     (List.map (showStmt indent' . content) stmts) ++
     ")"
     where indent' = indent + 4
-showStmt indent (Or stmts genVars) =
+showStmt indent (DetOr stmts genVars) =
     "(   " ++
     intercalate ("\n" ++ replicate indent ' ' ++ "|| ")
         (List.map (showStmt indent' . content) stmts) ++
@@ -3098,8 +3098,8 @@ showStmt _ (Fail) = "fail"
 --     "for " ++ show itr ++ " in " ++ show gen
 showStmt _ (Break) = "break"
 showStmt _ (Next) = "next"
-showStmt indent (Generator body) =
-    "yield {"
+showStmt indent (NonDetOr disjuncts _) =
+    "{"
     ++ "FIXME: generator body"
     ++ "}" 
 
