@@ -10,13 +10,7 @@
 #        int_seq(start + 2, end, ?val)
 #    }
 #
-#    generate {
-#        ?parity = 0
-#    ||
-#        ?parity = 1
-#   }
-#
-#    ?val = val + parity + 1
+#    ?val = val + 1
 #
 # }
 

@@ -1,0 +1,104 @@
+# For the generator:
+# def {generator} int_seq(start: int, end: int, ?val: int) {
+#    (start < end)
+#
+#    generate {
+#        ?val = start
+#    ||
+#        ?val = start + 1
+#    ||
+#        int_seq(start + 2, end, ?val)
+#    }
+#
+#    generate {
+#        ?parity = 0
+#    ||
+#        ?parity = 1
+#   }
+#
+#    ?val = val + parity + 1
+#
+# }
+
+type GenState1 {
+    pub StateAlt1
+      | StateAlt2
+      | StateAlt3(recursiveState: IntSeqState)
+      | Exhausted
+}
+
+def initGenState1(?state: GenState1) {
+    ?state = StateAlt1
+}
+
+def {test} nextGenState1(start: int, end: int, !state: GenState1, ?val: int) {
+    ?val = 0
+
+    if {
+        state = StateAlt1 ::
+            ?val = start
+            ?state = StateAlt2
+        | state = StateAlt2 ::
+            ?val = start + 1
+            if {
+                initIntSeq(start + 2, end, ?recursiveState) ::
+                    ?state = StateAlt3(recursiveState)
+                | otherwise ::
+                    ?state = StateAlt3(Exhausted)
+            }
+        | StateAlt3(?recursiveState) = state ::
+            if {
+                nextIntSeq(!recursiveState, ?val) ::
+                    ?state = StateAlt3(recursiveState)
+                | otherwise ::
+                    ?state = Exhausted
+                    fail
+            }
+    }
+}
+
+type GenState2 {
+    pub StateAlt1
+      | StateAlt2
+      | Exhausted
+}
+
+def initGenState2(?state: GenState2) {
+    ?state = StateAlt1
+}
+
+def {test} nextGenState2(!state: GenState2, ?parity: int) {
+    ?parity = 0
+
+    if {
+        state = StateAlt1 ::
+            ?parity = 0
+            ?state = StateAlt2
+        | state = StateAlt2 ::
+            ?parity = 1
+            ?state = Exhausted
+        | otherwise :: fail
+    }
+}
+
+type IntSeqState {
+    pub Generating(start: int, end: int, innerGen1: GenState1, innerGen2: GenState2)
+      | Exhausted
+}
+
+def {test} initIntSeq(start: int, end: int, ?state: IntSeqState) {
+    # Run the prelude
+    (start: end)
+
+    initGenState1(?genState1)
+    initGenState2(?genState2)
+    ?state = Generating(start, end, genState1, genState2)
+}
+
+def {test} nextIntSeq(!state: IntSeqState, ?val: int) {
+    ?val = 0
+
+    if {
+        
+    }
+}
