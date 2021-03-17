@@ -35,13 +35,11 @@ module AST (
   protoInputParamNames, isProcProtoArg,
   -- *Source Position Types
   OptPos, Placed(..), place, betterPlace, content, maybePlace, rePlace, unPlace,
-  placedApply, placedApply1, placedApplyM, contentApply,
-  makeMessage, updatePlacedM,
+  placedApply, placedApply1, placedApplyM, contentApply, updatePlacedM,
   -- *AST types
-  Module(..), ModuleInterface(..), ModuleImplementation(..), InterfaceHash,
-  PubProcInfo(..),
+  Module(..), isRootModule, ModuleInterface(..), ModuleImplementation(..), InterfaceHash, PubProcInfo(..),
   ImportSpec(..), importSpec, Pragma(..), addPragma,
-  descendentModules,
+  descendentModules, sameOriginModules, -- XXX not needed? differentOriginModules,
   enterModule, reenterModule, exitModule, reexitModule, inModule,
   emptyInterface, emptyImplementation,
   getParams, getDetism, getProcDef, getProcPrimProto,
@@ -76,8 +74,8 @@ module AST (
   updateModInterface, updateAllProcs, updateModSubmods, updateModProcs,
   getModuleSpec, moduleIsType, option,
   getOrigin, getSource, getDirectory,
-  optionallyPutStr, message, errmsg, (<!>), genProcName,
-  addImport, doImport, lookupType,
+  optionallyPutStr, message, errmsg, (<!>), Message(..), queueMessage,
+  genProcName, addImport, doImport, importFromSupermodule, lookupType,
   ResourceName, ResourceSpec(..), ResourceFlowSpec(..), ResourceImpln(..),
   addSimpleResource, lookupResource, publicResource,
   ProcModifiers(..), detModifiers, setDetism, setInline, setImpurity,
@@ -96,7 +94,7 @@ module AST (
   ) where
 
 import           Config (magicVersion, wordSize, objectExtension,
-                         sourceExtension)
+                         sourceExtension, currentTypeAlias)
 import           Control.Monad
 import           Control.Monad.Extra
 import           Control.Monad.Trans (lift,liftIO)
@@ -116,7 +114,7 @@ import           Options
 import           System.Exit
 import           System.FilePath
 import           System.IO
-import           System.Directory (makeAbsolute)
+import           System.Directory (makeAbsolute, makeRelativeToCurrentDirectory)
 -- import           Text.ParserCombinators.Parsec.Pos
 import           Text.Parsec.Pos
                  ( SourcePos, sourceName, sourceColumn, sourceLine )
@@ -403,7 +401,7 @@ data MessageLevel = Informational | Warning | Error
 data CompilerState = Compiler {
   options :: Options,            -- ^compiler options specified on command line
   tmpDir  :: FilePath,             -- ^tmp directory for this build
-  msgs :: [(MessageLevel, String)],  -- ^warnings, error messages, and info messages
+  msgs :: [Message],             -- ^warnings, error messages, and info messages
   errorState :: Bool,            -- ^whether or not we've seen any errors
   modules :: Map ModSpec Module, -- ^all known modules except what we're loading
   underCompilation :: [Module],  -- ^the modules in the process of being compiled
@@ -593,7 +591,7 @@ updateModuleM updater =
 -- |Return some function of the specified module.  Error if it's not a module.
 getSpecModule :: String -> (Module -> t) -> ModSpec -> Compiler t
 getSpecModule context getter spec = do
-    let msg = context ++ " looking up module " ++ show spec
+    let msg = context ++ " looking up module " ++ showModSpec spec
     underComp <- gets underCompilation
     let curr = List.filter ((==spec) . modSpec) underComp
     logAST $ "Under compilation: " ++ showModSpecs (modSpec <$> underComp)
@@ -628,6 +626,8 @@ enterModule source modspec rootMod = do
     when (isJust oldMod)
       $ shouldnt $ "enterModule " ++ showModSpec modspec ++ " already exists"
     logAST $ "Entering module " ++ showModSpec modspec
+    logAST $ "From file " ++ source
+    logAST $ "Root module " ++ maybe "<none>" showModSpec rootMod
     absSource <- liftIO $ makeAbsolute source
     modify (\comp -> let newMod = emptyModule
                                   { modOrigin        = absSource
@@ -737,38 +737,6 @@ getModuleImplementationMaybe fn = do
   case imp of
       Nothing -> return Nothing
       Just imp' -> return $ fn imp'
-
-
--- |Add the specified string as a message of the specified severity
---  referring to the optionally specified source location to the
---  collected compiler output messages.
-message :: MessageLevel -> String -> OptPos -> Compiler ()
-message lvl msg pos = do
-    let posMsg = makeMessage pos msg
-    modify (\bldr ->
-                bldr { msgs = msgs bldr ++ [(lvl, posMsg)] })
-    when (lvl == Error) (modify (\bldr -> bldr { errorState = True }))
-
-
--- |Add the specified string as an error message referring to the optionally
---  specified source location to the collected compiler output messages.
-errmsg :: OptPos -> String -> Compiler ()
-errmsg = flip (message Error)
-
-
--- |Pretty helper operator for adding messages to the compiler state.
-(<!>) :: MessageLevel -> String -> Compiler ()
-lvl <!> msg = message lvl msg Nothing
-infix 0 <!>
-
--- |Construct a message string from the specified text and location.
-makeMessage :: OptPos -> String -> String
-makeMessage Nothing msg = msg
-makeMessage (Just pos) msg =
-  sourceName pos ++ ":" ++
-  show (sourceLine pos) ++ ":" ++
-  show (sourceColumn pos) ++ ": " ++
-  msg
 
 
 -- |Return a new, unused proc name.
@@ -891,6 +859,10 @@ lookupType _ _ AnyType = return AnyType
 lookupType _ _ InvalidType = return InvalidType
 lookupType _ _ ty@TypeVariable{} = return ty
 lookupType _ _ ty@Representation{} = return ty
+lookupType context pos ty@(TypeSpec [] typename args)
+  | typename == currentTypeAlias = do
+    currMod <- getModuleSpec
+    return $ TypeSpec (init currMod) (last currMod) args
 lookupType context pos ty@(TypeSpec mod name args) = do
     currMod <- getModuleSpec
     logAST $ "In module " ++ showModSpec currMod
@@ -930,7 +902,7 @@ addSimpleResource :: ResourceName -> ResourceImpln -> Visibility -> Compiler ()
 addSimpleResource name impln vis = do
     currMod <- getModuleSpec
     let rspec = ResourceSpec currMod name
-    let rdef = maybePlace (Map.singleton rspec $ Just impln) $
+    let rdef = maybePlace (Map.singleton rspec impln) $
                resourcePos impln
     updateImplementation
       (\imp -> imp { modResources = Map.insert name rdef $ modResources imp,
@@ -1266,17 +1238,16 @@ emptyModule = Module
     }
 
 
+isRootModule :: ModSpec -> Compiler Bool
+isRootModule modspec =
+    maybe False ((Just modspec ==) . modRootModSpec) <$> getLoadedModule modspec
 
-descendantModuleOf :: ModSpec -> ModSpec -> Bool
-descendantModuleOf sub [] = True
-descendantModuleOf (a:as) (b:bs)
-  | a == b = descendantModuleOf as bs
-descendantModuleOf _ _ = False
 
 parentModule :: ModSpec -> Maybe ModSpec
 parentModule []  = Nothing
 parentModule [m] = Nothing
 parentModule modspec = Just $ init modspec
+
 
 -- | Collect all the descendent modules of the given modspec.
 descendentModules :: ModSpec -> Compiler [ModSpec]
@@ -1285,6 +1256,31 @@ descendentModules mspec = do
     desc <- fmap concat $ mapM descendentModules subMods
     return $ subMods ++ desc
 
+
+-- | Collect all the descendent modules of the given modspec that come from
+-- the same origin and hence should go in the same target file.
+sameOriginModules :: ModSpec -> Compiler [ModSpec]
+sameOriginModules mspec = do
+    let origin m = modOrigin . trustFromJust "sameOriginModules"
+                   <$> getLoadedModule m
+    file <- origin mspec
+    subMods <- Map.elems . modSubmods <$> getLoadedModuleImpln mspec
+    sameOriginSubMods <- filterM (((== file) <$>) . origin) subMods
+    (sameOriginSubMods ++) . concat <$> mapM sameOriginModules sameOriginSubMods
+
+
+-- XXX Looks like this isn't actually needed
+-- -- | Collect the nearest descendent modules of the given modspec that come from
+-- -- a different origin and hence should be written to different target files.
+-- differentOriginModules :: ModSpec -> Compiler [ModSpec]
+-- differentOriginModules mspec = do
+--     let origin m = modOrigin . trustFromJust "sameOriginModules"
+--                    <$> getLoadedModule m
+--     file <- origin mspec
+--     subMods <- Map.elems . modSubmods <$> getLoadedModuleImpln mspec
+--     (same,diff) <- List.partition snd . zip subMods 
+--                    <$> mapM (((== file) <$>) . origin) subMods
+--     ((fst <$> diff) ++) . concat <$> mapM differentOriginModules (fst <$> same)
 
 
 -- |The set of defining modules that the given (possibly
@@ -1306,9 +1302,10 @@ refersTo modspec name implMapFn specModFn = do
     -- imports <- getModuleImplementationField (Map.assocs . modImports)
     -- imported <- mapM getLoadingModule imports
     -- let visible = defined `Set.union` imported
-    logAST $ "*** ALL visible modules: "
+    logAST $ "*** ALL matching visible modules: "
         ++ showModSpecs (Set.toList (Set.map specModFn defined))
     let matched = Set.filter ((modspec `isSuffixOf`) . specModFn) defined
+    -- XXX Can't assume parent module exists
     case (Set.null matched,parentModule currMod) of
         (True,Just par) ->
             (refersTo modspec name implMapFn specModFn) `inModule` par
@@ -1418,10 +1415,10 @@ data ModuleImplementation = ModuleImplementation {
     modPragmas   :: Set Pragma,               -- ^pragmas for this module
     modImports   :: Map ModSpec (ImportSpec, InterfaceHash),
                                               -- ^This module's imports
+    modNestedIn  :: Maybe ModSpec,            -- ^Module's parent, if nested
     modSubmods   :: Map Ident ModSpec,        -- ^This module's submodules
     modResources :: Map Ident ResourceDef,    -- ^Resources defined by this mod
     modProcs     :: Map Ident [ProcDef],      -- ^Procs defined by this module
-    -- XXX Pull visibility out of list; all ctrs share one visibility
     modConstructors :: Maybe [(Visibility,Placed ProcProto)],
                                               -- ^reversed list of data
                                               -- constructors for this
@@ -1437,8 +1434,8 @@ data ModuleImplementation = ModuleImplementation {
 
 emptyImplementation :: ModuleImplementation
 emptyImplementation =
-    ModuleImplementation Set.empty Map.empty Map.empty Map.empty Map.empty
-                         Nothing Map.empty Map.empty Map.empty
+    ModuleImplementation Set.empty Map.empty Nothing Map.empty Map.empty
+                         Map.empty Nothing Map.empty Map.empty Map.empty
                          Set.empty Set.empty Nothing
 
 
@@ -1627,6 +1624,24 @@ doImport mod (imports, _) = do
     return ()
 
 
+-- |Import known types, resources, and procs from the specified module into the
+-- current one.  This is used to give a nested submodule access to its parent's
+-- members.
+importFromSupermodule :: ModSpec -> Compiler ()
+importFromSupermodule modspec = do
+    impl       <- getLoadedModuleImpln modspec
+    kTypes     <- getModuleImplementationField modKnownTypes
+    kResources <- getModuleImplementationField modKnownResources
+    kProcs     <- getModuleImplementationField modKnownProcs
+    let knownTypes = Map.unionWith Set.union (modKnownTypes impl) kTypes
+    let knownResources =
+            Map.unionWith Set.union (modKnownResources impl) kResources
+    let knownProcs = Map.unionWith Set.union (modKnownProcs impl) kProcs
+    updateModImplementation (\imp -> imp { modKnownTypes = knownTypes,
+                                           modKnownResources = knownResources,
+                                           modKnownProcs = knownProcs })
+
+
 -- | Resolve a (possibly) relative module spec into an absolute one.  The
 -- first argument is a possibly relative module spec and the second is an
 -- absolute one which the first argument should be interpreted relative to.
@@ -1685,7 +1700,7 @@ type ResourceIFace = Map ResourceSpec TypeSpec
 
 resourceDefToIFace :: ResourceDef -> ResourceIFace
 resourceDefToIFace def =
-    Map.map (maybe AnyType resourceType) $ content def
+    Map.map resourceType $ content def
 
 
 -- |A resource definition.  Since a resource may be defined as a
@@ -1693,7 +1708,7 @@ resourceDefToIFace def =
 --  simple resources, this will be a singleton), each with type and
 --  possibly an initial value.  There's also an optional source
 -- position.
-type ResourceDef = Placed (Map ResourceSpec (Maybe ResourceImpln))
+type ResourceDef = Placed (Map ResourceSpec ResourceImpln)
 
 data ResourceImpln =
     SimpleResource {
@@ -2893,7 +2908,7 @@ instance Show TypeFamily where
 
 -- |How to show a ModSpec.
 showModSpec :: ModSpec -> String
-showModSpec spec = intercalate "." spec
+showModSpec spec = intercalate "." $ (\case "" -> "``" ; m -> m) <$> spec
 
 
 -- |How to show a list of ModSpecs.
@@ -3235,6 +3250,8 @@ maybeShow pre (Just something) post =
   pre ++ show something ++ post
 
 
+------------------------------ Error Reporting -----------------------
+
 -- |Report an internal error and abort.
 shouldnt :: String -> a
 shouldnt what = error $ "Internal error: " ++ what
@@ -3268,33 +3285,79 @@ trustFromJustM msg computation = do
     return $ trustFromJust msg maybe
 
 
+data Message = Message {
+    messageLevel :: MessageLevel,  -- ^The inportance of the message
+    messagePlace :: OptPos,        -- ^The source location the message refers to
+    messageText  :: String         -- ^The text of the message
+}
+
+-- Not for displaying error messages, just for debugging printouts.
+instance Show Message where
+    show (Message lvl pos txt) = show lvl ++ " " ++ show pos ++ ": " ++ txt
+
+-- |Add the specified string as a message of the specified severity
+--  referring to the optionally specified source location to the
+--  collected compiler output messages.
+message :: MessageLevel -> String -> OptPos -> Compiler ()
+message lvl msg pos = queueMessage $ Message lvl pos msg
+
+
+-- |Add the specified message to the collected compiler output messages.
+queueMessage :: Message -> Compiler ()
+queueMessage msg = do
+    modify (\bldr -> bldr { msgs = msg : msgs bldr })
+    when (messageLevel msg == Error)
+         (modify (\bldr -> bldr { errorState = True }))
+
+
+-- |Add the specified string as an error message referring to the optionally
+--  specified source location to the collected compiler output messages.
+errmsg :: OptPos -> String -> Compiler ()
+errmsg = flip (message Error)
+
+
+-- |Pretty helper operator for adding messages to the compiler state.
+(<!>) :: MessageLevel -> String -> Compiler ()
+lvl <!> msg = message lvl msg Nothing
+infix 0 <!>
+
+
+-- |Construct a message string from the specified text and location.
+makeMessage :: OptPos -> String -> IO String
+makeMessage Nothing msg    = return msg
+makeMessage (Just pos) msg = do
+    relFile <- makeRelativeToCurrentDirectory $ sourceName pos
+    return $ relFile ++ ":" ++ show (sourceLine pos)
+             ++ ":" ++ show (sourceColumn pos) ++ ": " ++ msg
+
+
 -- |Prettify and show compiler messages. Only Error messages are shown always,
 -- the other message levels are shown only when the 'verbose' option is set.
 showMessages :: Compiler ()
 showMessages = do
     verbose <- optVerbose <$> gets options
-    messages <- reverse <$> gets msgs
+    messages <- reverse <$> gets msgs -- messages are collected in reverse order
     let filtered =
             if verbose
             then messages
-            -- XXX should probably include Warnings, too.
-            else List.filter (\(a,_) -> a == Error) messages
-    liftIO $ mapM_ showMessage filtered
+            else List.filter ((>=Warning) . messageLevel) messages
+    liftIO $ mapM_ showMessage $ sortOn messagePlace filtered
 
 
 -- |Prettify and show one compiler message.
-showMessage :: (MessageLevel, String) -> IO ()
-showMessage (lvl, msg) =
-  case lvl of
+showMessage :: Message -> IO ()
+showMessage (Message lvl pos msg) = do
+    posMsg <- makeMessage pos msg
+    case lvl of
       Informational ->
-          putStrLn msg
+          putStrLn posMsg
       Warning -> do
           setSGR [SetColor Foreground Vivid Yellow]
-          putStrLn msg
+          putStrLn posMsg
           setSGR [Reset]
       Error -> do
           setSGR [SetColor Foreground Vivid Red]
-          putStrLn msg
+          putStrLn posMsg
           setSGR [Reset]
 
 
