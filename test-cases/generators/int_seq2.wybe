@@ -5,39 +5,55 @@
 #    generate {
 #        ?val = start
 #    ||
-#        int_seq(start + 1, end, ?val)
+#        ?val = start + 1
+#    ||
+#        int_seq(start + 2, end, ?val)
 #    }
+#
+#    generate {
+#        ?parity = 0
+#    ||
+#        ?parity = 1
+#   }
+#
+#    ?val = val + parity + 1
+#
 # }
+
 
 type State {
     pub StateAlt1(start: int, end: int)
-    |   StateAlt2(start: int, end: int, recursiveState: State)
-    |   Exhausted
+      | StateAlt2(start: int, end: int)
+      | StateAlt3(start: int, end: int, recursiveState: State)
+      | Exhausted
 }
 
 def {test} init_IntSeq(start: int, end: int, ?state: State) {
+    # Run the prelude
     (start < end)
 
     ?state = StateAlt1(start, end)
 }
 
 def {test} next_IntSeq(!state: State, ?val: int) {
-    ?val = 0
-
+    ?val = 0  # TODO: Figure out a way to get rid of this
+    
     if {
         StateAlt1(?start, ?end) = state ::
             ?val = start
-
+            ?state = StateAlt2(start, end)
+        | StateAlt2(?start, ?end) = state ::
+            ?val = start + 1
             if {
-                init_IntSeq(start + 1, end, ?recursiveState) ::
-                    ?state = StateAlt2(start, end, recursiveState)
+                init_IntSeq(start + 2, end, ?recursiveState) ::
+                    ?state = StateAlt3(start, end, recursiveState)
                 | otherwise ::
-                    ?state = StateAlt2(start, end, Exhausted)
+                    ?state = StateAlt3(start, end, Exhausted)
             }
-        | StateAlt2(?start, ?end, ?recursiveState) = state ::
+        | StateAlt3(?start, ?end, ?recursiveState) = state ::
             if {
                 next_IntSeq(!recursiveState, ?val) ::
-                    ?state = StateAlt2(start, end, recursiveState)
+                    ?state = StateAlt3(start, end, recursiveState)
                 | otherwise ::
                     ?state = Exhausted
                     fail
@@ -45,6 +61,9 @@ def {test} next_IntSeq(!state: State, ?val: int) {
         | otherwise ::
             fail
     }
+
+    # Run the postlude
+    ?val = val + 1
 }
 
 if {

@@ -1,7 +1,0 @@
-def {generator} hello(?x: int) {
-    generate {
-        ?x = 1
-        |>
-        ?x = 2
-    }
-}
