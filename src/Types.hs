@@ -1002,6 +1002,7 @@ bodyCalls (pstmt:pstmts) detism = do
         -- For _ _ -> shouldnt "bodyCalls: flattening left For stmt"
         Break -> return rest
         Next ->  return rest
+        NonDetOr _ _ -> shouldnt "Not implemented for NonDetOr"
 
 
 -- |The statement is a ProcCall
@@ -1687,6 +1688,7 @@ modecheckStmt m name defPos delayed assigned detism
     Next pos = do
     logTyped $ "Mode checking continue with assigned=" ++ show assigned
     return ([maybePlace Next pos],delayed,bindingStateAfterNext assigned)
+modecheckStmt _ _ _ _ _ _ (NonDetOr _ _) _ = shouldnt "modecheckStmt not implemented for NonDetOr"
 
 -- |Return a list of error messages for too weak a determinism at the end of a
 -- statement sequence.
@@ -1951,6 +1953,7 @@ checkStmtTyped _ _ Nop _ = return ()
 checkStmtTyped _ _ Fail _ = return ()
 checkStmtTyped _ _ Break _ = return ()
 checkStmtTyped _ _ Next _ = return ()
+checkStmtTyped _ _ (NonDetOr _ _) _ = shouldnt "checkStmtTyped not implemented for NonDetOr"
 
 
 checkArgTyped :: ProcName -> OptPos -> ProcName -> OptPos ->

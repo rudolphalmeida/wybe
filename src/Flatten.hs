@@ -290,11 +290,11 @@ flattenStmt' (TestBool expr) pos SemiDet = do
                         ++ " produced " ++ show exprs'
 flattenStmt' (TestBool expr) _pos detism =
     shouldnt $ "TestBool " ++ show expr ++ " in " ++ show detism ++ " context"
-flattenStmt' (And tsts) pos SemiDet = do
+flattenStmt' (And tsts) pos _ = do
     tsts' <- flattenInner False True SemiDet (flattenStmts tsts SemiDet)
     emit pos $ And tsts'
-flattenStmt' stmt@And{} _pos detism =
-    shouldnt $ "And in a " ++ show detism ++ " context"
+-- flattenStmt' stmt@And{} _pos detism =
+--     shouldnt $ "And in a " ++ show detism ++ " context"
 flattenStmt' (DetOr tsts vars) pos SemiDet = do
     tsts' <- flattenInner False True SemiDet (flattenStmts tsts SemiDet)
     emit pos $ DetOr tsts' vars
@@ -344,6 +344,7 @@ flattenStmt' Nop pos _ = emit pos Nop
 flattenStmt' Fail pos _ = emit pos Fail
 flattenStmt' Break pos _ = emit pos Break
 flattenStmt' Next pos _ = emit pos Next
+flattenStmt' (NonDetOr _ _) _ _ = shouldnt "flattenStmt' not implemented for NonDetOr"
 
 
 ----------------------------------------------------------------

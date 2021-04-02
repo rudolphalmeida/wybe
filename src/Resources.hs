@@ -215,6 +215,7 @@ transformStmt tmp Break pos =
     return ([maybePlace Break pos], tmp)
 transformStmt tmp Next pos =
     return ([maybePlace Next pos], tmp)
+transformStmt _ (NonDetOr _ _) _ = shouldnt "transformStmt not implemented for NonDetOr"
 
 
 makeSingleStmt :: [Placed Stmt] -> Placed Stmt

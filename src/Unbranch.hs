@@ -108,7 +108,7 @@ unbranchProc' loopinfo proc = do
     let params = procProtoParams $ procProto proc
     let proto = procProto proc
     let params = procProtoParams proto
-    let params' = (selectDetism id (++ [testOutParam]) detism) params
+    let params' = selectDetism id (++ [testOutParam]) detism params
     let alt = selectDetism [] [move boolFalse testOutExp] detism
     let stmts = selectDetism body (body++[move boolTrue testOutExp]) detism
     let proto' = proto {procProtoParams = params'}
@@ -213,7 +213,7 @@ defIfVar _ _ = return ()
 
 
 -- |Record the specified dictionary as the current dictionary.
-setVars :: VarDict -> Unbrancher (VarDict)
+setVars :: VarDict -> Unbrancher VarDict
 setVars vars = do
     oldVars <- gets brVars
     modify (\s -> s { brVars = vars })
@@ -258,7 +258,7 @@ tempVar = do
 
 -- |Log a message, if we are logging unbrancher activity.
 logUnbranch :: String -> Unbrancher ()
-logUnbranch s = do
+logUnbranch s =
     lift $ logMsg Unbranch s
 
 
@@ -349,6 +349,8 @@ unbranchStmts detism (stmt:stmts) alt sense = do
 --   code and unneeded input and output arguments, we don't bother to try
 --   to optimise these things here.
 --
+
+--             Outer Deter - Statement - Position - Success follow - Failure follow - if False swap success and fail
 unbranchStmt :: Determinism -> Stmt -> OptPos -> [Placed Stmt] -> [Placed Stmt]
              -> Bool -> Unbrancher [Placed Stmt]
 unbranchStmt _ stmt@(ProcCall _ _ _ _ True args) _ _ _ _ =
@@ -390,7 +392,7 @@ unbranchStmt detism stmt@(ForeignCall _ _ _ args) pos stmts alt sense = do
     logUnbranch $ "Unbranching foreign call " ++ showStmt 4 stmt
     defArgs args
     leaveStmtAsIs detism stmt pos stmts alt sense
-unbranchStmt detism stmt@(TestBool val) pos stmts alt sense = do
+unbranchStmt detism stmt@(TestBool val) pos stmts alt sense = 
     ifSemiDet detism (showStmt 4 stmt ++ " in a Det context")
     $ do
       condVars <- gets brVars
@@ -409,7 +411,7 @@ unbranchStmt detism stmt@(And conj) pos stmts alt sense =
     $ do
       logUnbranch $ "Unbranching conjunction " ++ show stmt
       unbranchStmts SemiDet (conj ++ stmts) alt sense
-unbranchStmt detism stmt@(DetOr disjs exitVars) _ stmts alt sense = do
+unbranchStmt detism stmt@(DetOr disjs exitVars) _ stmts alt sense = 
     ifSemiDet detism ("Disjunction in a Det context: " ++ show stmt)
     $ do
       let exitVars' = trustFromJust "unbranching Disjunction without exitVars"
@@ -472,6 +474,7 @@ unbranchStmt _ Next _ _ _ _ = do
     nxt <- getLoopNext
     logUnbranch $ "Current next proc = " ++ showStmt 4 (content nxt)
     return [nxt]
+unbranchStmt _ (NonDetOr _ _) _ _ _ _ = shouldnt "unbranchStmt for NonDetOr not implemented!"
 
 
 -- |Emit the supplied statement, and process the remaining statements.
@@ -518,7 +521,7 @@ mkCond True exp pos thn els condVars vars
               then move exp dest
               else if thnSrcContent == boolFalse && elsSrcContent == boolTrue
                    then boolNegate exp dest
-                   else maybePlace 
+                   else maybePlace
                         (Cond test thn els (Just condVars) (Just vars)) pos]
       _ -> [maybePlace (Cond test thn els (Just condVars) (Just vars)) pos]
   where test = Unplaced $ TestBool exp
@@ -553,11 +556,10 @@ flatStmt _             = False
 
 -- |A symbol table containing all input parameters
 inputParams :: [Param] -> VarDict
-inputParams params =
-    List.foldr
+inputParams = List.foldr
     (\(Param v ty dir _) vdict ->
          if flowsIn dir then Map.insert v ty vdict else vdict)
-    Map.empty params
+    Map.empty
 
 
 -- |Add all output arguments of a param list to the symbol table
