@@ -474,7 +474,7 @@ unbranchStmt _ Next _ _ _ _ = do
     nxt <- getLoopNext
     logUnbranch $ "Current next proc = " ++ showStmt 4 (content nxt)
     return [nxt]
-unbranchStmt _ (NonDetOr _ _) _ _ _ _ = shouldnt "unbranchStmt for NonDetOr not implemented!"
+unbranchStmt _ (NonDetOr _ _) _ _ _ _ = nyi "unbranchStmt for NonDetOr not implemented!"
 
 
 -- |Emit the supplied statement, and process the remaining statements.

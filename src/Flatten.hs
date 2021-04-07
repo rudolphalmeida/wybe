@@ -344,7 +344,8 @@ flattenStmt' Nop pos _ = emit pos Nop
 flattenStmt' Fail pos _ = emit pos Fail
 flattenStmt' Break pos _ = emit pos Break
 flattenStmt' Next pos _ = emit pos Next
-flattenStmt' stmt@(NonDetOr _ _) _ _ = nyi ("flattenStmt' not implemented for NonDetOr\n" ++ showStmt 0 stmt)
+flattenStmt' stmt@(NonDetOr body _) _ NonDet = mapM_ (`flattenStmts` NonDet) body
+flattenStmt' (NonDetOr _ _) _ detism = shouldnt $ "NonDetOr in a " ++ show detism ++ " context"
 
 
 ----------------------------------------------------------------
