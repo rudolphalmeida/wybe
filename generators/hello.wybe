@@ -1,0 +1,7 @@
+def {generator} hello(?value: int) {
+    generate {
+        ?value = 1
+    ||
+        ?value = 2
+    }
+}
