@@ -42,7 +42,7 @@ def {test} gen2_rest(?parity:int, !cp:gen2cp) {
     }
 }
 
-type gen2cp { pub gen2_choice2 | gen2_nomore }
+pub type gen2cp { pub gen2_choice2 | gen2_nomore }
 
 
 
@@ -77,7 +77,7 @@ def {test} gen1_rest(?val:int, !cp:gen1cp) {
     }
 }
 
-type gen1cp { pub
+pub type gen1cp { pub
               gen1_choice2(start:int, end:int)
             | gen1_choice3(start:int, end:int)
             | gen1_choice3_rest(innercp:int_seq_cp)
@@ -117,7 +117,7 @@ def {test} int_seq_rest(?val:int,
        }
 }
 
-type int_seq_cp { pub
+pub type int_seq_cp { pub
     int_seq_cp(start:int, end:int, val:int, gen1_cp:gen1cp, gen2_cp:gen2cp)
 }
 
