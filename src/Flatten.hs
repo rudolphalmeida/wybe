@@ -344,7 +344,7 @@ flattenStmt' Nop pos _ = emit pos Nop
 flattenStmt' Fail pos _ = emit pos Fail
 flattenStmt' Break pos _ = emit pos Break
 flattenStmt' Next pos _ = emit pos Next
-flattenStmt' (NonDetOr _ _) _ _ = shouldnt "flattenStmt' not implemented for NonDetOr"
+flattenStmt' stmt@(NonDetOr _ _) _ _ = nyi ("flattenStmt' not implemented for NonDetOr\n" ++ showStmt 0 stmt)
 
 
 ----------------------------------------------------------------

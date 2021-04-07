@@ -528,7 +528,7 @@ generatorStmtParser :: Parser (Placed Stmt)
 generatorStmtParser = do
     pos <- tokenPosition <$> ident "generate"
     -- TODO: Fix parser
-    disjuncts <- betweenB Brace $ many1 stmtParser `sepBy` symbol "|>"
+    disjuncts <- betweenB Brace $ many1 stmtParser `sepBy` symbol ";"
     return $ Placed (NonDetOr disjuncts Nothing) pos
 
 
@@ -667,7 +667,7 @@ completeOperatorTable =
     , [ prefix "~" ]
     , [ binary "&&" AssocLeft ]
     , [ binary "||" AssocLeft ]
-    , [binary "|>" AssocLeft]
+    -- , [binary ";" AssocNone]
     , [ Postfix whereBodyParser]
     ]
 
