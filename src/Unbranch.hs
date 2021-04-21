@@ -104,24 +104,48 @@ unbranchProc' loopinfo proc = do
                       ++ showProcDef 0 proc ++ "\n"
     let ProcDefSrc body = procImpln proc
     let detism = procDetism proc
-    let tmpCtr = procTmpCount proc
-    let params = procProtoParams $ procProto proc
-    let proto = procProto proc
-    let params = procProtoParams proto
-    let params' = selectDetism id (++ [testOutParam]) detism params
-    let alt = selectDetism [] [move boolFalse testOutExp] detism
-    let stmts = selectDetism body (body++[move boolTrue testOutExp]) detism
-    let proto' = proto {procProtoParams = params'}
-    (body',tmpCtr',newProcs) <-
-        unbranchBody loopinfo tmpCtr params' detism stmts alt
-    let proc' = proc { procProto = proto'
-                     , procDetism = selectDetism detism Det detism
-                     , procImpln = ProcDefSrc body'
-                     , procTmpCount = tmpCtr'}
-    logMsg Unbranch $ "** Unbranched defn:" ++ showProcDef 0 proc' ++ "\n"
-    logMsg Unbranch "================================================\n"
-    mapM_ addProcDef newProcs
-    return proc'
+    case detism of NonDet -> do
+                -- Handle `generator` procs
+                    let tmpCtr = procTmpCount proc
+                    let cp_name = procName proc ++ "_cp"
+                    -- TODO: Generate choice point type
+                    let cp_type_spec = TypeSpec [] cp_name []
+
+                    let proto = procProto proc
+                    let params = procProtoParams proto
+                    let params' = params ++ [Param "cp" cp_type_spec ParamInOut Ordinary]
+                    let proto' = proto { procProtoParams = params'}
+                    logMsg Unbranch $ showProcDef 4 proc
+                    (body',tmpCtr',newProcs) <-
+                        unbranchBody loopinfo tmpCtr params' detism body []
+                    let proc' = proc { procProto = proto'
+                    , procDetism = selectDetism detism Det detism
+                    , procImpln = ProcDefSrc body'
+                    , procTmpCount = tmpCtr'}
+                    logMsg Unbranch $ "** Unbranched defn:" ++ showProcDef 0 proc' ++ "\n"
+                    logMsg Unbranch "================================================\n"
+                    mapM_ addProcDef newProcs
+                    return proc'
+                -- Handle `test` and other proc types
+                   _      -> do
+                    let tmpCtr = procTmpCount proc
+                    let params = procProtoParams $ procProto proc
+                    let proto = procProto proc
+                    let params = procProtoParams proto
+                    let params' = selectDetism id (++ [testOutParam]) detism params
+                    let alt = selectDetism [] [move boolFalse testOutExp] detism
+                    let stmts = selectDetism body (body++[move boolTrue testOutExp]) detism
+                    let proto' = proto {procProtoParams = params'}
+                    (body',tmpCtr',newProcs) <-
+                        unbranchBody loopinfo tmpCtr params' detism stmts alt
+                    let proc' = proc { procProto = proto'
+                                    , procDetism = selectDetism detism Det detism
+                                    , procImpln = ProcDefSrc body'
+                                    , procTmpCount = tmpCtr'}
+                    logMsg Unbranch $ "** Unbranched defn:" ++ showProcDef 0 proc' ++ "\n"
+                    logMsg Unbranch "================================================\n"
+                    mapM_ addProcDef newProcs
+                    return proc'
 
 
 -- |Eliminate loops and ensure that Conds only appear as the final
@@ -129,6 +153,7 @@ unbranchProc' loopinfo proc = do
 unbranchBody :: Maybe LoopInfo -> Int -> [Param] -> Determinism
              -> [Placed Stmt] -> [Placed Stmt]
              -> Compiler ([Placed Stmt],Int,[ProcDef])
+unbranchBody loopinfo tmpCtr params NonDet body alt = nyi "NonDet case not yet implemented"
 unbranchBody loopinfo tmpCtr params detism body alt = do
     let unbrancher = initUnbrancherState loopinfo tmpCtr params
     let outparams =  brOutParams unbrancher
