@@ -524,11 +524,16 @@ ifCaseParser = do
 
 -- }
 
+disjunctParser :: Parser (Placed Stmt)
+disjunctParser = do
+    body <- many stmtParser
+    return $ maybePlace (And body) (place $ head body)
+
 generatorStmtParser :: Parser (Placed Stmt)
 generatorStmtParser = do
     pos <- tokenPosition <$> ident "generate"
     -- TODO: Fix parser
-    disjuncts <- betweenB Brace $ many1 stmtParser `sepBy` symbol ";"
+    disjuncts <- betweenB Brace $ disjunctParser `sepBy` symbol ";"
     return $ Placed (NonDetOr disjuncts Nothing) pos
 
 

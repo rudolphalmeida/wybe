@@ -346,7 +346,10 @@ flattenStmt' Break pos _ = emit pos Break
 flattenStmt' Next pos _ = emit pos Next
 -- TODO: After replacing with [PS] with And PS in AST change this to match
 -- DetOr
-flattenStmt' stmt@(NonDetOr body _) _ NonDet = mapM_ (`flattenStmts` NonDet) body
+flattenStmt' stmt@(NonDetOr disjuncts vars) pos NonDet = do
+    logFlatten $ showStmt 4 stmt
+    disjuncts' <- flattenInner False True NonDet (flattenStmts disjuncts NonDet)
+    emit pos $ NonDetOr disjuncts' vars
 flattenStmt' stmt@(NonDetOr _ _) _ detism = do
     logFlatten $ showStmt 4 stmt
     shouldnt $ "NonDetOr in a " ++ show detism ++ " context"

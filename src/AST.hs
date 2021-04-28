@@ -815,7 +815,7 @@ addConstructor vis pctor = do
           any (\c -> procProtoName c == procProtoName ctor
                 && length (procProtoParams c) == length (procProtoParams ctor))
           $ content . snd <$> pctors
-    let typeVars = Set.unions 
+    let typeVars = Set.unions
                    (typeVarSet . paramType <$> procProtoParams (content pctor))
     missingParams <- Set.difference typeVars . Set.fromList
                      <$> getModule modParams
@@ -834,7 +834,7 @@ addConstructor vis pctor = do
                 updateModule (\m -> m { modIsType  = True })
                 addKnownType currMod
             else
-                errmsg pos 
+                errmsg pos
                 $ "Constructors for type " ++ showModSpec currMod
                   ++ " use unbound type variable(s) "
                   ++ intercalate ", " (("?"++) <$> Set.toList missingParams)
@@ -1126,14 +1126,14 @@ getProcPrimProto pspec = do
     case procImpln def of
         impln@ProcDefPrim{ procImplnProcSpec = pspec2, procImplnProto = proto}
             | pspec == pspec2 -> return proto
-            | and [ procSpecMod pspec == procSpecMod pspec2, 
-                    procSpecName pspec == procSpecName pspec2, 
+            | and [ procSpecMod pspec == procSpecMod pspec2,
+                    procSpecName pspec == procSpecName pspec2,
                     procSpecID pspec == procSpecID pspec2 ] -> do
                 let impln' = impln{procImplnProcSpec = pspec}
                 updateProcDef (\_ -> def{procImpln = impln'}) pspec
                 return proto
-            | otherwise -> 
-                shouldnt $ "get compiled proc but procSpec not mathcing: " ++ 
+            | otherwise ->
+                shouldnt $ "get compiled proc but procSpec not mathcing: " ++
                            show pspec ++ ", " ++ show pspec2
         _ -> shouldnt $ "get prim proto of uncompiled proc " ++ show pspec
 
@@ -1841,9 +1841,9 @@ showSuperProc (SuperprocIs super) =
 data ProcImpln
     = ProcDefSrc [Placed Stmt]           -- ^defn in source-like form
     | ProcDefPrim {
-        procImplnProcSpec :: ProcSpec, 
-        procImplnProto :: PrimProto, 
-        procImplnBody :: ProcBody,       
+        procImplnProcSpec :: ProcSpec,
+        procImplnProto :: PrimProto,
+        procImplnBody :: ProcBody,
         procImplnAnalysis :: ProcAnalysis, -- ^defn in LPVM (clausal) form
         procImplnSpeczBodies :: SpeczProcBodies
     }
@@ -1996,7 +1996,7 @@ instance Show ProcImpln where
                             Just body -> showBlock 4 body)
                 |> intercalate "\n"
         in
-            show pSpec ++ "\n" ++ show proto ++ ":" ++ show analysis 
+            show pSpec ++ "\n" ++ show proto ++ ":" ++ show analysis
                     ++ showBlock 4 body ++ speczBodies
 
 
@@ -2127,8 +2127,7 @@ foldStmt' sfn efn val (UseResources _ body) = foldStmts sfn efn val body
 foldStmt' _   _   val Break = val
 foldStmt' _   _   val Next = val
 -- TODO: Confirm what this is exactly supposed to do
-foldStmt' sfn efn val (NonDetOr disjuncts _) = last returns
-    where returns = List.map (foldStmts sfn efn val) disjuncts
+foldStmt' sfn efn val (NonDetOr disjuncts _) = foldStmts sfn efn val disjuncts
 
 
 -- |Fold over a list of expressions in a pre-order left-to-right traversal.
@@ -3183,8 +3182,12 @@ showStmt _ (Break) = "break"
 showStmt _ (Next) = "next"
 showStmt indent (NonDetOr disjuncts _) =
     "generate {"
-    ++ List.intercalate "\n;" (List.map (showBody (indent+4)) disjuncts)
-    ++ "\n}" 
+    ++ List.intercalate  "\n;" (List.map (showBody (indent+4) . (\(And stmts) -> stmts) . content) disjuncts)
+    ++ "\n}"
+-- showStmt indent (NonDetOr disjuncts _) =
+--     "generate {"
+--     ++ List.intercalate "\n;" (List.map (showBody (indent+4)) disjuncts)
+    -- ++ "\n}" 
 
 
 -- |Show a proc body, with the specified indent.
