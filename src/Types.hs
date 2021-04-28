@@ -1002,7 +1002,8 @@ bodyCalls (pstmt:pstmts) detism = do
         -- For _ _ -> shouldnt "bodyCalls: flattening left For stmt"
         Break -> return rest
         Next ->  return rest
-        NonDetOr _ _ -> shouldnt "Not implemented for NonDetOr"
+        -- TODO: Check if this is the right implementation for NonDetOr
+        NonDetOr disjuncts _ -> bodyCalls disjuncts detism
 
 
 -- |The statement is a ProcCall
@@ -1688,7 +1689,14 @@ modecheckStmt m name defPos delayed assigned detism
     Next pos = do
     logTyped $ "Mode checking continue with assigned=" ++ show assigned
     return ([maybePlace Next pos],delayed,bindingStateAfterNext assigned)
-modecheckStmt _ _ _ _ _ _ (NonDetOr _ _) _ = shouldnt "modecheckStmt not implemented for NonDetOr"
+-- TODO: Check if this is the right implementation for NonDetOr
+modecheckStmt m name defPos delayed assigned detism
+    stmt@(NonDetOr disjunctions _) pos = do
+    logTyped $ "Mode checking disjunction " ++ show stmt
+    -- XXX must mode check individually and join the resulting states
+    (disjunctions', assigned') <- modecheckStmts m name defPos [] assigned detism disjunctions
+    vars <- typeMapFromSet $ bindingVars assigned'
+    return ([maybePlace (DetOr disjunctions' vars) pos], delayed, assigned')
 
 -- |Return a list of error messages for too weak a determinism at the end of a
 -- statement sequence.
