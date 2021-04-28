@@ -153,7 +153,7 @@ unbranchProc' loopinfo proc = do
 unbranchBody :: Maybe LoopInfo -> Int -> [Param] -> Determinism
              -> [Placed Stmt] -> [Placed Stmt]
              -> Compiler ([Placed Stmt],Int,[ProcDef])
-unbranchBody loopinfo tmpCtr params NonDet body alt = nyi "NonDet case not yet implemented"
+-- unbranchBody loopinfo tmpCtr params NonDet body alt = nyi "NonDet case not yet implemented"
 unbranchBody loopinfo tmpCtr params detism body alt = do
     let unbrancher = initUnbrancherState loopinfo tmpCtr params
     let outparams =  brOutParams unbrancher
@@ -680,7 +680,7 @@ newProcProto name inVars = do
     return $ ProcProto name (inParams ++ outParams) Set.empty
 
 
--- |Return the second value when the detism is SemiDet, otherwise the second.
+-- |Return the second value when the detism is SemiDet, otherwise the first.
 selectDetism :: a -> a -> Determinism -> a
 selectDetism _ semi SemiDet = semi
 selectDetism det _  _ = det
