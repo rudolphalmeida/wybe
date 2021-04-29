@@ -1002,7 +1002,7 @@ bodyCalls (pstmt:pstmts) detism = do
         -- For _ _ -> shouldnt "bodyCalls: flattening left For stmt"
         Break -> return rest
         Next ->  return rest
-        -- TODO: Check if this is the right implementation for NonDetOr
+        -- Flattening should have only allowed NonDetOr in NonDet contexts
         NonDetOr disjuncts _ -> bodyCalls disjuncts detism
 
 
@@ -1667,7 +1667,7 @@ modecheckStmt m name defPos delayed assigned detism
     return ([maybePlace (And stmts') pos], delayed, assigned')
 modecheckStmt m name defPos delayed assigned detism
     stmt@(DetOr stmts _) pos = do
-    logTyped $ "Mode checking disjunction " ++ show stmt
+    logTyped $ "Mode checking DetOr disjunction " ++ show stmt
     -- XXX must mode check individually and join the resulting states
     (stmts', assigned') <- modecheckStmts m name defPos [] assigned detism stmts
     vars <- typeMapFromSet $ bindingVars assigned'
@@ -1690,13 +1690,15 @@ modecheckStmt m name defPos delayed assigned detism
     logTyped $ "Mode checking continue with assigned=" ++ show assigned
     return ([maybePlace Next pos],delayed,bindingStateAfterNext assigned)
 -- TODO: Check if this is the right implementation for NonDetOr
-modecheckStmt m name defPos delayed assigned detism
+modecheckStmt m name defPos delayed assigned NonDet
     stmt@(NonDetOr disjunctions _) pos = do
-    logTyped $ "Mode checking disjunction " ++ show stmt
+    logTyped $ "Mode checking NonDet disjunction " ++ show stmt
     -- XXX must mode check individually and join the resulting states
-    (disjunctions', assigned') <- modecheckStmts m name defPos [] assigned detism disjunctions
+    (disjunctions', assigned') <- modecheckStmts m name defPos [] assigned NonDet disjunctions
     vars <- typeMapFromSet $ bindingVars assigned'
     return ([maybePlace (DetOr disjunctions' vars) pos], delayed, assigned')
+modecheckStmt m name defPos delayed assigned detism
+    stmt@(NonDetOr disjunctions _) pos = shouldnt $ "modeCheckStmt called for NonDetOr in " ++ show detism ++ " context"
 
 -- |Return a list of error messages for too weak a determinism at the end of a
 -- statement sequence.

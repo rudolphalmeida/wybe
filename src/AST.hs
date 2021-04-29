@@ -2453,6 +2453,7 @@ detStmt (Cond _ thn els _ _) = all detStmt $ List.map content $ thn++els
 detStmt (And list) = all detStmt $ List.map content list
 detStmt (DetOr list _) = all detStmt $ List.map content list
 detStmt (Not _) = False
+detStmt (NonDetOr _ _) = False
 detStmt _ = True
 
 

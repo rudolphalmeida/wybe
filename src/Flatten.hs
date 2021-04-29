@@ -350,9 +350,9 @@ flattenStmt' stmt@(NonDetOr disjuncts vars) pos NonDet = do
     logFlatten $ showStmt 4 stmt
     disjuncts' <- flattenInner False True NonDet (flattenStmts disjuncts NonDet)
     emit pos $ NonDetOr disjuncts' vars
-flattenStmt' stmt@(NonDetOr _ _) _ detism = do
+flattenStmt' stmt@(NonDetOr _ _) pos detism = do
     logFlatten $ showStmt 4 stmt
-    shouldnt $ "NonDetOr in a " ++ show detism ++ " context"
+    lift $ errmsg pos $ "NonDetOr in a " ++ show detism ++ " context"
 
 
 ----------------------------------------------------------------
